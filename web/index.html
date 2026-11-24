@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clips</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='5' fill='%2314181a'/%3E%3Cpath d='M14 12H5v12h9M28 12h3v12h-3' fill='none' stroke='%23e9ece9' stroke-width='2.6'/%3E%3Crect x='16' y='5' width='10' height='26' fill='%23ff6b47'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>try { document.documentElement.dataset.theme = localStorage.getItem("tema") || "dark"; } catch (e) {}</script>
+</head>
+<body>
+<nav class="rail" aria-label="Principal">
+  <a class="mark" href="#/"></a>
+  <button class="new" id="railnew"><span data-ic="plus" data-s="20"></span>Nuevo</button>
+  <a class="nav" href="#/" data-nav="home"><span data-ic="library" data-s="20"></span>Biblioteca</a>
+  <a class="nav" href="#/cola" data-nav="cola"><span data-ic="queue" data-s="20"></span>Cola<b class="badge" id="qbadge" hidden></b></a>
+  <a class="nav" href="#/descargas" data-nav="descargas"><span data-ic="download" data-s="20"></span>Descargas</a>
+  <a class="nav" href="#/ajustes" data-nav="ajustes"><span data-ic="settings" data-s="20"></span>Ajustes</a>
+  <div class="foot"><button id="theme" title="Claro u oscuro" aria-label="Cambiar entre claro y oscuro"><span data-ic="theme"></span></button><a class="ver" id="ver" href="#/ajustes" hidden></a><a class="cafe" id="cafe" target="_blank" rel="noopener noreferrer" title="Invítame un café" aria-label="Invítame un café" hidden><span data-ic="coffee"></span></a><a class="sys" id="sysbadge" href="#/ajustes"></a></div>
+</nav>
+<main id="view"></main>
+<div id="toasts"></div>
+
+<!-- ===================== BIBLIOTECA ===================== -->
+<template id="tpl-library">
+  <div class="page">
+    <div class="phead"><div class="grow" id="lhead" style="display:flex;align-items:center;gap:8px"><h1>Biblioteca</h1></div>
+      <label class="search"><span data-ic="search" data-s="16"></span><input type="search" id="lsearch" placeholder="Buscar un proyecto" aria-label="Buscar un proyecto"></label>
+      <button class="btn pri hide-sm" id="lnew"><span data-ic="plus" data-s="16"></span>Nuevo proyecto</button></div>
+    <div id="lnotice"></div><div id="llive"></div>
+    <div class="lib"><nav class="tree" id="tree" aria-label="Carpetas"></nav><div class="rows" id="rows"></div></div>
+  </div>
+</template>
+
+<!-- ===================== NUEVO PROYECTO ===================== -->
+<template id="tpl-new">
+  <header><h2>Nuevo proyecto</h2><button class="btn gh sq" id="nclose" aria-label="Cerrar"><span data-ic="close"></span></button></header>
+  <div class="scroll">
+    <section>
+      <div class="src">
+        <div class="ln"><input type="text" id="src" placeholder="Pega un enlace o la ruta de un video" aria-label="Enlace o ruta del video" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="pick"><span data-ic="film" data-s="16"></span>Elegir archivo</button></div>
+        <div class="info" id="srcinfo"></div>
+        <input type="file" id="file" accept="video/*,.mkv,.mov,.webm,.mp4" hidden>
+      </div>
+    </section>
+    <section id="livebox" hidden><h3>Está en vivo. ¿Qué parte quieres?</h3>
+      <div class="seg" id="l-mode"><button data-v="past">Lo que ya pasó</button><button data-v="next">Lo que viene</button><button data-v="follow">Seguir el directo</button><button data-v="after" hidden>Todo, cuando termine</button><button data-v="sofar" hidden>Lo que va hasta ahora</button></div>
+      <div class="lv" data-l="past">
+        <div class="seg" id="l-span"><button data-v="1">Última hora</button><button data-v="3">Últimas 3 horas</button><button data-v="x">Elegir horario</button></div>
+        <div class="two" id="l-range" hidden><label class="fld"><span class="lb">Desde</span><input type="datetime-local" id="l-from"></label><label class="fld"><span class="lb">Hasta</span><input type="datetime-local" id="l-to"></label></div>
+      </div>
+      <div class="lv" data-l="next" hidden><div class="seg" id="l-min"><button data-v="30">30 minutos</button><button data-v="60">1 hora</button><button data-v="120">2 horas</button></div></div>
+      <div class="lv two" data-l="follow" hidden>
+        <label class="fld"><span class="lb">Cuántas horas, como máximo</span><input id="l-hours" type="number" value="4" min="1" max="48"></label>
+        <label class="fld"><span class="lb">Espacio en disco, como máximo (GB)</span><input id="l-gb" type="number" value="20" min="2" max="2000"></label>
+      </div>
+      <label class="fld"><span class="lb" id="l-namelb">Nombre de los proyectos</span><input type="text" id="l-name" maxlength="70" autocomplete="off"></label>
+      <p class="mut small" id="l-info" role="status"></p>
+    </section>
+    <section><h3>Qué quieres sacar</h3>
+      <div class="seg" id="o-whole"><button data-v="0">Los mejores momentos</button><button data-v="1">El video completo, sin recortar</button></div>
+      <div class="two whole-hide" style="margin-top:14px">
+        <label class="fld"><span class="lb">Cuántos clips, como máximo</span><input id="o-n" type="number" value="10" min="1" max="40"></label>
+        <div class="fld"><span class="lb">Duración de cada uno, en segundos</span><span class="pair"><input id="o-min" type="number" value="20" min="5" max="180" aria-label="Duración mínima"> a <input id="o-max" type="number" value="60" min="10" max="180" aria-label="Duración máxima"></span></div>
+      </div>
+    </section>
+    <section><h3>Encuadre</h3>
+      <div class="frames" id="o-mode"><button data-v="auto" data-frame="auto">Sigue a quien habla</button><button data-v="streamer" data-frame="streamer">Cámara y juego</button><button data-v="apilado" data-frame="apilado">Vertical y horizontal</button><button data-v="full" data-frame="full">Entero con fondo</button></div>
+    </section>
+    <section><h3>Subtítulos</h3>
+      <div class="seg" id="o-style"><button data-v="karaoke">Karaoke</button><button data-v="dinamico">Dinámico: zooms, emojis y logos</button></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="o-silence"> <span>Quitar silencios</span></label>
+    </section>
+    <details><summary>Más opciones <span class="mut">idioma, carpeta y descarga</span></summary>
+      <div class="two">
+        <label class="fld"><span class="lb">Carpeta</span><select id="o-folder"></select></label>
+        <label class="fld"><span class="lb">Idioma del video</span><select id="o-lang"><option value="auto">Detectar solo</option><option value="es">Español</option><option value="en">Inglés</option><option value="pt">Portugués</option><option value="fr">Francés</option><option value="it">Italiano</option></select></label>
+      </div>
+      <label class="fld" id="dlbox"><span class="lb">Calidad de la descarga</span><select id="o-download"><option value="auto">Automática: 1080p, o 720p si dura más de 1 hora</option><option value="1080">1080p: la más nítida y pesada</option><option value="720">720p: pesa mucho menos</option><option value="480">480p: la más rápida, se ve borrosa</option></select></label>
+      <button type="button" class="btn sm" id="o-savedef">Guardar como predeterminado</button>
+      <p class="mut small" id="o-definfo" style="margin-top:8px"></p>
+    </details>
+  </div>
+  <footer><div class="err" id="newerr" role="alert"></div><button type="button" class="btn pri lg" id="go">Crear clips</button></footer>
+</template>
+
+<!-- ===================== PROYECTO ===================== -->
+<template id="tpl-project">
+  <div class="page">
+    <a href="#/" class="back" style="margin-left:-4px"><span data-ic="left" data-s="16"></span>Biblioteca</a>
+    <div class="phead" style="margin-top:4px">
+      <div class="grow"><h1 class="pname" id="pname" contenteditable="plaintext-only" spellcheck="false" role="textbox" aria-label="Nombre del proyecto"></h1><div class="mut small" id="pmeta" style="margin-top:4px"></div></div>
+      <button class="btn gh" id="pfolder"></button>
+      <button class="btn" id="openfolder"><span data-ic="folder" data-s="16"></span>Exportados</button>
+      <button class="btn" id="newclip"><span data-ic="plus" data-s="16"></span>Clip a mano</button>
+      <button class="btn sq" id="pmore" aria-label="Más opciones del proyecto"><span data-ic="more"></span></button>
+    </div>
+    <div id="pstatus"></div>
+    <div class="vmap" id="vmap" hidden></div>
+    <div class="bar" id="cbar" hidden>
+      <div class="chips" id="cats"></div><span class="sp"></span>
+      <div class="seg inline" id="sort" role="group" aria-label="Orden"><button data-v="video">Orden del video</button><button data-v="pot">Potencial</button><button data-v="len">Duración</button></div>
+      <div class="seg inline" id="look" role="group" aria-label="Vista"><button data-v="grid" aria-label="Cuadrícula" title="Cuadrícula"><span data-ic="grid" data-s="16"></span></button><button data-v="list" aria-label="Lista" title="Lista"><span data-ic="list" data-s="16"></span></button></div>
+    </div>
+    <div id="clips" class="clips"></div>
+    <div class="bulk" id="bulk" hidden></div>
+  </div>
+  <dialog id="redo" class="dlg" style="width:min(600px, calc(100vw - 32px))"><div class="in">
+    <h2 id="redo-title"></h2><p class="mut" id="redo-hint"></p><p class="mut small" id="redo-def" style="margin:8px 0 16px"></p>
+    <div class="frames" id="r-mode"><button data-v="auto" data-frame="auto">Sigue a quien habla</button><button data-v="streamer" data-frame="streamer">Cámara y juego</button><button data-v="apilado" data-frame="apilado">Vertical y horizontal</button><button data-v="full" data-frame="full">Entero con fondo</button></div>
+    <div class="seg" id="r-style" style="margin:14px 0"><button data-v="karaoke">Karaoke</button><button data-v="dinamico">Dinámico: zooms, emojis y logos</button></div>
+    <div class="two"><label class="fld"><span class="lb">Cuántos clips, como máximo</span><input id="r-n" type="number" min="1" max="40"></label>
+      <div class="fld"><span class="lb">Duración de cada uno, en segundos</span><span class="pair"><input id="r-min" type="number" min="5" max="180" aria-label="Duración mínima"> a <input id="r-max" type="number" min="10" max="180" aria-label="Duración máxima"></span></div></div>
+    <label class="chk"><input type="checkbox" id="r-silence"> <span>Quitar silencios</span></label>
+    <div class="err" id="r-err" role="alert"></div></div>
+    <div class="acts"><button class="btn gh" id="r-cancel">Cancelar</button><button class="btn pri" id="r-go">Reemplazar los clips</button></div>
+  </dialog>
+</template>
+
+<!-- ===================== EDITOR ===================== -->
+<template id="tpl-editor">
+  <div class="ed">
+    <header class="ehead">
+      <button class="btn gh sm" id="eback"><span data-ic="left" data-s="16"></span>Clips</button>
+      <div class="tt" id="etitle"></div><div class="st" id="savestate" role="status"></div>
+      <div class="nav"><button class="btn gh sq sm" id="eprev" aria-label="Clip anterior" title="Clip anterior"><span data-ic="left" data-s="17"></span></button><span id="enum"></span><button class="btn gh sq sm" id="enext" aria-label="Clip siguiente" title="Clip siguiente"><span data-ic="right" data-s="17"></span></button></div>
+      <button class="btn sm" id="elook"><span data-ic="layers" data-s="16"></span>Estilo del clip</button>
+      <button class="btn sm pri" id="eexport"><span data-ic="out" data-s="16"></span>Exportar</button>
+    </header>
+    <section class="view" aria-label="Monitor"><canvas id="cv" width="540" height="960"></canvas>
+      <div class="transport"><button id="b5" title="Atrás 5 s" aria-label="Atrás 5 segundos"><span data-ic="back1"></span></button><button id="play" title="Espacio" aria-label="Reproducir"><span data-ic="play" data-s="19"></span></button><button id="f5" title="Adelante 5 s" aria-label="Adelante 5 segundos"><span data-ic="fwd1"></span></button><span class="num" id="tcode">0:00 / 0:00</span></div></section>
+    <nav class="secs" id="secs" role="tablist" aria-label="Secciones">
+      <button role="tab" data-tab="t-titulo"><span data-ic="title" data-s="20"></span>Titular</button>
+      <button role="tab" data-tab="t-subs"><span data-ic="captions" data-s="20"></span>Subtítulos</button>
+      <button role="tab" data-tab="t-encuadre"><span data-ic="frame" data-s="20"></span>Encuadre</button>
+      <button role="tab" data-tab="t-corte"><span data-ic="cut" data-s="20"></span>Corte</button>
+      <button role="tab" data-tab="t-ritmo"><span data-ic="rhythm" data-s="20"></span>Ritmo</button>
+      <button role="tab" data-tab="t-marca"><span data-ic="brand" data-s="20"></span>Marca</button>
+      <button role="tab" data-tab="t-salida"><span data-ic="out" data-s="20"></span>Salida</button>
+    </nav>
+    <div class="panel">
+      <div class="tab" id="t-titulo"><h2>Titular</h2>
+        <label class="fld"><textarea id="e-title" rows="2" maxlength="90" aria-label="Texto del titular"></textarea></label>
+        <label class="chk"><input type="checkbox" id="e-title-on"> <span>Mostrar el titular</span></label>
+        <div class="fld" style="margin-top:10px"><span class="lb">Cuánto se ve</span><div class="seg" id="e-title-secs"><button data-v="0">Todo</button><button data-v="3">3 s</button><button data-v="5">5 s</button><button data-v="8">8 s</button></div></div>
+        <div class="grp"><div class="fld"><span class="lb">Forma</span><div class="seg" id="e-tstyle"></div></div>
+          <div class="fld"><span class="lb">Letra</span><div class="fonts" id="e-tfont"></div></div>
+          <div class="fld"><span class="lb"><span>Color <span id="tcolorhint"></span></span></span><div class="swatches" id="e-tcolor"></div></div>
+          <label class="fld"><span class="lb">Tamaño <output></output></span><input type="range" id="e-tsize" min="36" max="120" step="2"></label>
+          <label class="fld"><span class="lb">Altura <output></output></span><input type="range" id="e-ty" min="40" max="1600" step="10"></label></div>
+      </div>
+      <div class="tab" id="t-subs"><h2>Subtítulos</h2>
+        <label class="chk"><input type="checkbox" id="e-subs-on"> <span>Mostrar subtítulos</span></label>
+        <label class="chk"><input type="checkbox" id="e-upper"> <span>Todo en mayúsculas</span></label>
+        <div class="grp"><div class="fld"><span class="lb">Estilo</span><div class="seg" id="e-style"><button data-v="karaoke">Karaoke</button><button data-v="dinamico">Dinámico</button></div></div>
+          <p class="hint" id="dynhint" hidden>Sale palabra a palabra, y las palabras clave del guion, gigantes.</p>
+          <div class="fld"><span class="lb">Letra</span><div class="fonts" id="e-font"></div></div>
+          <div class="fld"><span class="lb">Color de la palabra que suena</span><div class="swatches" id="e-color"></div></div>
+          <label class="fld"><span class="lb">Tamaño <output></output></span><input type="range" id="e-size" min="60" max="140" step="2"></label>
+          <label class="fld"><span class="lb">Altura <output></output></span><input type="range" id="e-suby" min="500" max="1650" step="10"></label></div>
+      </div>
+      <div class="tab" id="t-encuadre"><h2>Encuadre</h2>
+        <div class="frames" id="e-layout"><button data-v="vertical" data-frame="auto">Vertical</button><button data-v="apilado" data-frame="apilado">Vertical y horizontal</button><button data-v="streamer" data-frame="streamer">Cámara y juego</button><button data-v="full" data-frame="full">Entero con fondo</button><button data-v="split" data-frame="split">Dos videos</button></div>
+        <div class="lay lay-vertical"><div class="seg" id="e-framing"><button data-v="auto">Seguir a quien habla</button><button data-v="manual">Fijo</button></div>
+          <label class="fld manual-only"><span class="lb">Posición horizontal</span><input type="range" id="e-mx" min="0" max="1" step="0.01"></label></div>
+        <div class="lay lay-streamer">
+          <div class="smode-recuadros"><p class="hint">Arrastra los recuadros: <b class="cam">amarillo</b>, la cámara; <b class="game">cian</b>, el juego. La esquina cambia el tamaño.</p>
+            <div class="srcbox"><canvas id="srccv" width="480" height="270"></canvas></div>
+            <label class="fld"><span class="lb">Alto de la cámara</span><input type="range" id="e-camh" min="380" max="1100" step="10"></label>
+            <button class="btn sm" id="autostream">Detectar la cámara sola</button></div>
+          <div class="smode-apilado"><div class="fld"><span class="lb">Video horizontal completo</span><div class="seg" id="e-sswap"><button data-v="0">Abajo</button><button data-v="1">Arriba</button></div></div>
+            <div class="fld"><span class="lb">Parte vertical</span><div class="seg" id="e-framing2"><button data-v="auto">Seguir a quien habla</button><button data-v="manual">Fija</button></div></div>
+            <label class="fld manual-only"><span class="lb">Posición horizontal</span><input type="range" id="e-mx2" min="0" max="1" step="0.01"></label></div>
+        </div>
+        <div class="lay lay-split"><label class="fld"><span class="lb">Video de abajo</span><select id="e-other"></select></label>
+          <div class="two"><label class="fld"><span class="lb">Desfase (s)</span><input type="number" id="e-offset" step="0.05"></label><div class="fld"><span class="lb">Por el audio</span><button class="btn" id="dosync" style="width:100%">Sincronizar</button></div></div>
+          <p class="hint" id="syncinfo">El de arriba es este proyecto. Sube el otro video como proyecto aparte y elígelo aquí.</p></div>
+      </div>
+      <div class="tab" id="t-corte"><h2>Corte</h2>
+        <div class="fld"><span class="lb">Inicio, en segundos del video</span><span class="nudge"><button data-n="start:-1">−1</button><button data-n="start:-0.2">−0,2</button><input id="e-start" type="number" step="0.1" aria-label="Inicio"><button data-n="start:0.2">+0,2</button><button data-n="start:1">+1</button></span></div>
+        <div class="fld"><span class="lb">Fin</span><span class="nudge"><button data-n="end:-1">−1</button><button data-n="end:-0.2">−0,2</button><input id="e-end" type="number" step="0.1" aria-label="Fin"><button data-n="end:0.2">+0,2</button><button data-n="end:1">+1</button></span></div>
+        <p class="hint">Dura <b class="num" id="e-dur"></b></p>
+        <label class="chk"><input type="checkbox" id="e-silence"> <span>Quitar silencios<span class="mut small">Si en la pausa se ve movimiento, se queda.</span></span></label>
+        <div class="grp"><h3>Cortar por el guion</h3><div class="seg" id="pickmode"><button data-v="start">Empezar en…</button><button data-v="end">Terminar en…</button></div><div id="ctx" class="ctx"></div></div>
+      </div>
+      <div class="tab" id="t-ritmo"><h2>Ritmo</h2>
+        <label class="chk"><input type="checkbox" id="e-zooms"> <span>Zooms de cámara<span class="mut small">Acercamientos al cambiar de frase.</span></span></label>
+        <label class="chk"><input type="checkbox" id="e-emojis"> <span>Emojis<span class="mut small">Aparecen al decir su palabra.</span></span></label>
+        <label class="chk"><input type="checkbox" id="e-logos"> <span>Logos de redes<span class="mut small">Cuando se nombra una.</span></span></label>
+        <div class="grp"><div class="hd"><h3>Emojis de este clip</h3><button class="btn sm" id="addemoji"><span data-ic="plus" data-s="15"></span>Añadir</button></div><div id="emojis" class="emojilist"></div></div>
+        <div class="grp"><h3>Color del video</h3><div class="seg" id="e-filter"><button data-v="ninguno">Natural</button><button data-v="calido">Cálido</button><button data-v="cine">Cine</button><button data-v="vivo">Vivo</button><button data-v="bn">B/N</button></div></div>
+      </div>
+      <div class="tab" id="t-marca"><h2>Marca</h2>
+        <div class="hd"><h3>Tus stickers</h3><label class="btn sm"><span data-ic="upload" data-s="15"></span>Subir imagen<input type="file" id="bupload" accept="image/png,image/jpeg,image/webp" hidden></label></div>
+        <div id="bgallery" class="bgallery"></div>
+        <p class="hint" style="margin-top:10px">Sirven para todos tus proyectos. PNG con fondo transparente queda mejor.</p>
+        <div class="grp"><div class="hd"><h3>En este clip</h3><button class="btn sm gh" id="ball">Poner en todos</button></div><div id="blist" class="blist"></div></div>
+      </div>
+      <div class="tab" id="t-salida"><h2>Salida</h2>
+        <div class="quals"><button class="pri" data-q="1080p"><b>1080p</b><small>La mejor</small></button><button data-q="720p"><b>720p</b><small>Más ligero</small></button><button data-q="480p"><b>480p</b><small>Borrador</small></button><button data-q="mp3"><b>MP3</b><small>Solo el audio</small></button></div>
+        <div id="ejobs"></div>
+        <div class="grp"><div class="hd"><h3>Archivos</h3><button class="btn sm gh" id="eopen"><span data-ic="folder" data-s="15"></span>Abrir carpeta</button></div><p class="mut small" id="noexp">Este clip aún no se ha exportado.</p><div id="eexports" class="files"></div></div>
+        <div class="grp"><div class="hd"><h3>Para publicar</h3><button class="btn sm" id="copypub"><span data-ic="copy" data-s="15"></span>Copiar todo</button></div>
+          <label class="fld"><span class="lb">Descripción</span><textarea id="e-desc" rows="3"></textarea></label><label class="fld"><span class="lb">Hashtags</span><input id="e-tags" type="text"></label></div>
+        <div class="grp" id="reasonbox"><h3>Por qué lo eligió</h3><p class="hint" id="e-reason"></p></div>
+      </div>
+    </div>
+    <section class="guion"><div class="hd"><h3>Guion</h3><span class="mut small">Toca una palabra para corregirla o marcarla como clave.</span></div><div class="words" id="words"></div></section>
+    <section class="tl" id="tl" aria-label="Línea de tiempo"></section>
+  </div>
+  <dialog id="applydlg" class="dlg"><div class="in"><h2>Aplicar a todo el proyecto</h2><p class="mut">Copia el estilo de este clip a los demás. Lo propio de cada uno no cambia: texto del titular, guion, corte y emojis.</p>
+    <div class="opts"><label class="chk"><input type="checkbox" data-g="encuadre" checked> <span><b>Encuadre</b><span class="mut small">Tipo, modo y si sigue a quien habla</span></span></label>
+      <label class="chk"><input type="checkbox" data-g="subtitulos" checked> <span><b>Subtítulos</b><span class="mut small">Estilo, letra, color, tamaño, altura y mayúsculas</span></span></label>
+      <label class="chk"><input type="checkbox" data-g="titulo" checked> <span><b>Estilo del titular</b><span class="mut small">Forma, letra, color, tamaño, altura y cuánto se ve</span></span></label>
+      <label class="chk"><input type="checkbox" data-g="dinamico" checked> <span><b>Ritmo y color</b><span class="mut small">Zooms, emojis, logos, quitar silencios y color del video</span></span></label>
+      <label class="chk"><input type="checkbox" data-g="marca" checked> <span><b>Marca</b><span class="mut small">Reemplaza los stickers de los demás clips</span></span></label></div>
+    <div class="err" id="applyerr" role="alert"></div></div><div class="acts"><button class="btn gh" id="applycancel">Cancelar</button><button class="btn pri" id="applygo">Aplicar</button></div></dialog>
+  <dialog id="defdlg" class="dlg"><div class="in"><h2>Guardar como predeterminado</h2><p class="mut">Así saldrán los clips nuevos. Los que ya existen no cambian.</p>
+    <label class="fld"><span class="lb">Para</span><select id="defscope"></select></label><p class="mut small" id="defscopehint" style="margin:-8px 0 8px"></p>
+    <div class="opts"><label class="chk"><input type="checkbox" data-g="titulo" checked> <span><b>Estilo del titular</b><span class="mut small">Si se muestra, cuánto, forma, letra, color, tamaño y altura</span></span></label>
+      <label class="chk"><input type="checkbox" data-g="subtitulos" checked> <span><b>Subtítulos</b><span class="mut small">Si se muestran, letra, color, tamaño, altura y mayúsculas</span></span></label>
+      <label class="chk"><input type="checkbox" data-g="marca" checked> <span><b>Marca</b><span class="mut small" id="defmarca"></span></span></label>
+      <label class="chk"><input type="checkbox" data-g="encuadre" checked> <span><b>Encuadre</b><span class="mut small" id="defenc"></span></span></label>
+      <label class="chk"><input type="checkbox" data-g="estilo" checked> <span><b>Estilo y efectos</b><span class="mut small">Karaoke o dinámico, zooms, emojis, logos, quitar silencios y color</span></span></label></div>
+    <div class="err" id="deferr" role="alert"></div></div><div class="acts"><button class="btn gh" id="defcancel">Cancelar</button><button class="btn pri" id="defgo">Guardar</button></div></dialog>
+</template>
+
+<!-- ===================== COLA, DESCARGAS, AJUSTES ===================== -->
+<template id="tpl-cola"><div class="page narrow"><div class="phead"><h1>Cola</h1></div><div id="qbox"></div></div></template>
+
+<template id="tpl-descargas"><div class="page narrow">
+  <div class="phead"><div class="grow"><h1>Descargas</h1><p class="mut" style="margin-top:6px">Baja un video entero (hasta 1080p) o solo su audio en MP3. Solo para videos tuyos o con permiso de su autor.</p></div></div>
+  <form class="dlform" id="dform"><input type="text" id="durl" placeholder="Pega el enlace del video" aria-label="Enlace del video" autocomplete="off"><div class="seg inline" id="dfmt"><button data-v="video">Video</button><button data-v="mp3">MP3</button></div><button class="btn pri">Descargar</button></form>
+  <div class="err" id="derr" role="alert"></div>
+  <p class="mut small" id="dnone" style="margin-top:18px" hidden>Aquí quedarán tus descargas.</p><div class="files" id="dlist" style="margin-top:18px"></div></div></template>
+
+<template id="tpl-ajustes"><div class="page narrow"><div class="phead"><h1>Ajustes</h1></div>
+  <div class="setgrid"><div><h3>Tu equipo</h3><p class="mut">Lo que encontré en este PC y con qué trabajará cada paso.</p></div><div><div id="s-equipo"><p class="mut">Comprobando…</p></div><div class="eqfoot" id="s-eqfoot"></div></div></div>
+  <form id="sform">
+    <div class="setgrid"><div><h3>Quién elige los momentos</h3><p class="mut">Lee la transcripción, escoge los tramos y escribe titulares y descripciones.</p></div><div class="engines" id="s-engine">
+      <button data-v="auto"><b>Automático</b><small>Claude si hay API key; si no, tu servidor o la IA local; si no, reglas.</small></button><button data-v="ollama"><b>IA local</b><small>Con Ollama: gratis y sin internet.</small></button><button data-v="servidor"><b>Otro servidor local</b><small>LM Studio, llama.cpp, Jan, vLLM y otros.</small></button><button data-v="claude"><b>Claude</b><small>Por la API de Anthropic. Se paga aparte.</small></button><button data-v="reglas"><b>Solo reglas</b><small>Al instante, por pausas y frases llamativas. Menos fino.</small></button></div></div>
+    <div class="setgrid"><div><h3>IA local (Ollama)</h3><p class="mut" id="s-ollama-status">Comprobando…</p></div><div><label class="fld"><span class="lb">Modelo</span><select id="s-omodel"></select></label><label class="fld"><span class="lb">Carpeta de Ollama</span><input id="s-odir" type="text" placeholder="Automática: se busca sola"></label>
+      <div class="eqfoot"><button type="button" class="btn sm" id="s-omore" aria-expanded="false">Agregar o borrar modelos</button></div><div id="s-omgr" hidden></div></div></div>
+    <div class="setgrid"><div><h3>Otro servidor local</h3><p class="mut">Para programas que hablan como la API de OpenAI. Enciende su servidor y búscalo, o escribe la dirección.</p></div><div>
+      <label class="fld"><span class="lb"><span>Dirección</span><span id="s-lhint"></span></span><input id="s-lurl" type="text" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false"></label>
+      <div class="srvs" id="s-lfound" hidden></div>
+      <label class="fld"><span class="lb">Modelo</span><select id="s-lmodel"></select></label>
+      <label class="fld"><span class="lb"><span>Clave (solo si la pide)</span><span id="s-lkeyhint"></span></span><input id="s-lkey" type="password" autocomplete="off"></label>
+      <div class="eqfoot"><button type="button" class="btn sm" id="s-lscan">Buscar en este PC</button><button type="button" class="btn sm" id="s-ltest">Probar</button><span class="mut small" id="s-lok" role="status"></span></div></div></div>
+    <div class="setgrid"><div><h3>Claude</h3><p class="mut">Opcional. La key se guarda solo en este PC, en <code>data\settings.json</code>.</p></div><div><label class="fld"><span class="lb"><span>API key</span><span id="s-keyhint"></span></span><input id="s-key" type="password" placeholder="sk-ant-…" autocomplete="off"></label>
+      <label class="fld"><span class="lb">Modelo</span><select id="s-model"><option value="claude-opus-5-5">Claude Opus 5.5 (mejor criterio)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (más barato)</option><option value="claude-haiku-5-5">Claude Haiku 5.5 (el más barato)</option></select></label></div></div>
+    <div class="setgrid"><div><h3>Transcripción</h3><p class="mut">Whisper, en este PC. Un modelo mayor acierta más y tarda más.</p></div><div><label class="fld"><span class="lb">Modelo de voz</span><select id="s-whisper"><option value="auto">Automático: turbo con GPU, small sin GPU</option><option value="large-v3-turbo">large-v3-turbo (el más preciso; lento sin GPU)</option><option value="medium">medium (equilibrado)</option><option value="small">small (rápido)</option></select></label></div></div>
+    <div class="setgrid"><div><h3>Exportación</h3><p class="mut">Con qué se codifica el video. Componer cada fotograma es lo que más tarda, así que la GPU rara vez lo acelera.</p></div><div><label class="fld"><span class="lb">Codificador</span><select id="s-encoder"></select></label></div></div>
+    <div class="savebar"><button class="btn pri">Guardar ajustes</button><span class="ok" id="s-ok" role="status"></span></div>
+  </form>
+  <div class="setgrid"><div><h3>Predeterminados</h3><p class="mut">Se guardan desde un clip («Estilo del clip») o al crear un proyecto. Cada carpeta usa los suyos; lo que le falte sale de los generales.</p></div><div id="s-defs"></div></div>
+  <div class="setgrid" id="s-about" hidden><div><h3>Acerca de</h3></div><div><p id="s-ver"></p><p id="s-author" style="margin-top:6px"></p><p class="mut" id="s-notice" style="margin-top:6px"></p><div id="s-cafe" hidden><p style="margin:16px 0 10px">Si te sirve, puedes apoyar su desarrollo.</p><a class="btn" target="_blank" rel="noopener noreferrer"><span data-ic="coffee" data-s="16"></span>Invítame un café</a></div></div></div>
+</div></template>
+
+<script src="app-name.js"></script>
+<script src="ui.js"></script>
+<script src="render.js"></script>
+<script src="timeline.js"></script>
+<script src="library.js"></script>
+<script src="project.js"></script>
+<script src="editor.js"></script>
+<script src="equipo.js"></script>
+<script src="pages.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

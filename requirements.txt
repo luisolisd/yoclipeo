@@ -1,0 +1,13 @@
+# Lo necesario para usar YoClipeo (Python 3.11, Windows).
+anthropic>=2.12
+ctranslate2==4.6.0
+fastapi>=0.165
+faster-whisper==1.2.1
+imageio-ffmpeg>=0.8.1
+numpy>=2.4
+onnxruntime>=1.32
+opencv-python-headless>=5.1
+pillow>=13.0
+python-multipart>=0.0.34
+uvicorn>=0.54
+yt-dlp

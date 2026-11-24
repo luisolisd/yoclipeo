@@ -1,0 +1,16 @@
+# Datos de cada persona: videos, proyectos, logos, claves
+data/
+# Se bajan o se crean al instalar
+.venv/
+models/
+bin/
+__pycache__/
+*.pyc
+# Del equipo o del editor
+.claude/
+.vscode/
+.idea/
+.env
+*.log
+Thumbs.db
+desktop.ini
