@@ -2,6 +2,11 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.3.4
+- Al publicar en YouTube puedes elegir una lista de reproducción. Es opcional y pide un permiso más; actívalo en Ajustes o en la misma ventana de publicar.
+- Varios clips se suben siempre en el orden del video. Si uno falla, los que siguen lo esperan.
+- Hashtags favoritos: guárdalos una vez y ponlos con un clic en uno o en todos los clips.
+
 ## 1.3.3
 - Conectar YouTube es más fácil: los pasos usan el modo personal de Google, sin marca, dominio ni publicar la app.
 - La primera publicación ya puede ser pública o programada, y de varios clips. Subirla en privado queda como sugerencia.

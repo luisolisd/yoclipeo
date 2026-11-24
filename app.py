@@ -236,8 +236,13 @@ def yt_client(request: Request, body: dict):
 
 
 @app.post("/api/youtube/connect")
-def yt_connect(request: Request):
-    return {"url": _yt(request, youtube.connect, PORT)}
+def yt_connect(request: Request, body: dict | None = None):
+    return {"url": _yt(request, youtube.connect, PORT, bool((body or {}).get("lists")))}
+
+
+@app.get("/api/youtube/listas")
+def yt_lists(request: Request):
+    return _yt(request, youtube.playlists)
 
 
 @app.post("/api/youtube/disconnect")
@@ -260,6 +265,16 @@ def yt_callback(state: str = "", code: str = "", error: str = ""):
                                                            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
 
 
+@app.get("/api/hashtags")
+def tags_list():
+    return youtube.hashtags()
+
+
+@app.put("/api/hashtags")
+def tags_save(request: Request, body: dict):
+    return _yt(request, youtube.set_hashtags, body.get("fav"))
+
+
 @app.get("/api/publicaciones")
 def pub_list(pid: str = "", cid: str = ""):
     return youtube.listing(pid, cid)
@@ -272,7 +287,7 @@ def pub_add(request: Request, body: dict):
 
 @app.post("/api/publicaciones/{i}/{what}")
 def pub_do(request: Request, i: str, what: str):
-    fn = {"reintentar": youtube.retry, "cancelar": youtube.cancel, "quitar": youtube.forget}.get(what)
+    fn = {"reintentar": youtube.retry, "cancelar": youtube.cancel, "quitar": youtube.forget, "lista": youtube.relist}.get(what)
     if not fn:
         raise HTTPException(404)
     _yt(request, fn, i)

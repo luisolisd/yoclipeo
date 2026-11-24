@@ -60,7 +60,11 @@ YouTube solo acepta subidas de programas registrados en Google. Cada persona reg
 
 No hace falta marca, dominio ni publicar la app. Solo funciona con la cuenta de Google que la creó; si sale `client_user_mismatch`, entraste con otra.
 
-No compartas ese archivo. Te sugerimos subir el primer clip en privado para revisar cómo queda. Cada envío pide confirmación. Para quitar el permiso, pulsa **Desconectar** en Ajustes o entra a [tu cuenta de Google](https://myaccount.google.com/permissions).
+No compartas ese archivo. Te sugerimos subir el primer clip en privado para revisar cómo queda. Cada envío pide confirmación. Varios clips se suben en el orden del video. Guarda tus hashtags favoritos para ponerlos con un clic.
+
+**Listas de reproducción (opcional):** para agregar tus videos a una lista, pulsa **Activar listas**. Google pide un permiso más amplio, administrar tu cuenta de YouTube; con él solo se leen tus listas y se agregan los videos que subas desde aquí.
+
+Para quitar el permiso, pulsa **Desconectar** en Ajustes o entra a [tu cuenta de Google](https://myaccount.google.com/permissions).
 
 Al publicar aplican los [Términos de YouTube](https://www.youtube.com/t/terms) y la [política de privacidad de Google](https://policies.google.com/privacy).
 

@@ -32,8 +32,10 @@ API = "https://www.googleapis.com/youtube/v3"
 UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos"
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload",      # subir
           "https://www.googleapis.com/auth/youtube.readonly"]    # decir en qué canal y cómo quedó cada video
+MANAGE = "https://www.googleapis.com/auth/youtube"                # opcional, para las listas: administrar la cuenta (incluye los otros dos)
 FILE = config.DATA / "youtube.json"
 PUBS = config.DATA / "publicaciones.json"
+FAVS = config.DATA / "hashtags.json"
 TMP = config.DATA / "publicar"
 CHUNK = 4 * 1024 * 1024          # múltiplo de 256 KB, como pide YouTube
 WAITS = (1, 2, 4, 8, 16, 32, 64)
@@ -133,6 +135,8 @@ REASONS = {
     "SERVICE_DISABLED": "Falta activar «YouTube Data API v3» en tu proyecto de Google.",
     "insufficientPermissions": "El permiso no alcanza. Desconecta y vuelve a conectar YouTube.",
     "ACCESS_TOKEN_SCOPE_INSUFFICIENT": "El permiso no alcanza. Desconecta y vuelve a conectar YouTube.",
+    "playlistNotFound": "Esa lista ya no existe.", "playlistContainsMaximumNumberOfVideos": "Esa lista ya está llena.",
+    "playlistItemsNotAccessible": "El permiso no alcanza para esa lista.", "playlistOperationUnsupported": "YouTube no deja agregar videos a esa lista.",
     "invalidTitle": "YouTube no aceptó el título.", "invalidDescription": "YouTube no aceptó la descripción.", "invalidTags": "YouTube no aceptó las etiquetas.",
     "invalidPublishAt": "YouTube no aceptó la fecha.", "invalidCategoryId": "YouTube no aceptó la categoría.", "mediaBodyRequired": "El video llegó vacío.",
     "invalid_client": "Google no reconoce la app. Vuelve a elegir su archivo.", "invalid_grant": "El permiso caducó o se quitó. Vuelve a conectar YouTube.",
@@ -195,15 +199,16 @@ def token(force=False):
         return _mem["token"]
 
 
-def _api(path, **q):
+def _api(path, send=None, **q):
     for again in (False, True):
         try:
-            return json.loads(_call(f"{API}/{path}?{urllib.parse.urlencode(q)}", headers={"Authorization": f"Bearer {token(again)}"})[2])
+            h = {"Authorization": f"Bearer {token(again)}", **({"Content-Type": "application/json; charset=UTF-8"} if send else {})}
+            return json.loads(_call(f"{API}/{path}?{urllib.parse.urlencode(q)}", "POST" if send else "GET", h, json.dumps(send).encode() if send else None)[2])
         except urllib.error.HTTPError as e:
             if e.code == 401 and not again:
                 continue
             raise _fail(e)
-        except NET:
+        except (*NET, ValueError):
             raise YTError("No hay conexión con YouTube.", reason="net")
 
 
@@ -237,16 +242,18 @@ def clear():
         return "" if e.reason in ("invalid_token", "invalid_grant") else "Se borró de este equipo, pero no se pudo avisar a Google. Quítalo también en myaccount.google.com/permissions."
 
 
-def connect(port):
+def connect(port, lists=False):
     s = _read().get("secret", {})
     if not s.get("id"):
         raise ValueError("Primero elige el archivo de tu app de Google.")
+    if s.get("refresh") and active():
+        raise ValueError("Hay videos subiéndose. Espera a que terminen.")
     ver, state, back = secrets.token_urlsafe(64), secrets.token_urlsafe(32), f"http://127.0.0.1:{port}/youtube/callback"
     with _lock:
         _pending.clear()
-        _pending.update(state=state, ver=ver, back=back, t=time.time(), error="")
+        _pending.update(state=state, ver=ver, back=back, t=time.time(), error="", lists=bool(lists))
     ch = base64.urlsafe_b64encode(hashlib.sha256(ver.encode()).digest()).rstrip(b"=").decode()
-    return AUTH + "?" + urllib.parse.urlencode({"client_id": s["id"], "redirect_uri": back, "response_type": "code", "scope": " ".join(SCOPES), "state": state,
+    return AUTH + "?" + urllib.parse.urlencode({"client_id": s["id"], "redirect_uri": back, "response_type": "code", "scope": MANAGE if lists else " ".join(SCOPES), "state": state,
                                                 "code_challenge": ch, "code_challenge_method": "S256", "access_type": "offline", "prompt": "consent select_account"})
 
 
@@ -264,10 +271,11 @@ def callback(state, code, error):
         s = d.get("secret", {})
         r = _form(TOKEN, client_id=s.get("id", ""), client_secret=s.get("key", ""), code=code, code_verifier=p["ver"], grant_type="authorization_code", redirect_uri=p["back"])
         got = set(str(r.get("scope", "")).split())
-        if not set(SCOPES) <= got or not r.get("refresh_token"):
-            if r.get("access_token"):
+        had, lists = bool(s.get("refresh")), MANAGE in got
+        if not (lists or not p["lists"] and set(SCOPES) <= got) or not r.get("refresh_token"):
+            if r.get("access_token") and not had:            # revocar quitaría también el permiso que ya servía
                 _quiet(lambda: _form(REVOKE, token=r["access_token"]))
-            raise YTError("Faltó marcar los dos permisos de YouTube. Vuelve a conectar y deja los dos marcados.")
+            raise YTError("Faltó aceptar el permiso para las listas." if p["lists"] else "Faltó marcar los dos permisos de YouTube. Vuelve a conectar y deja los dos marcados.")
         with _lock:
             _mem.update(token=r["access_token"], until=time.time() + max(60, int(r.get("expires_in", 3600)) - 120))
         try:
@@ -275,12 +283,13 @@ def callback(state, code, error):
             if not it:
                 raise YTError(REASONS["youtubeSignupRequired"])
         except YTError:
-            _quiet(lambda: _form(REVOKE, token=r["refresh_token"]))
+            if not had:
+                _quiet(lambda: _form(REVOKE, token=r["refresh_token"]))
             _mem.update(token="", until=0.0)
             raise
         ch = {"id": it[0]["id"], "title": it[0]["snippet"].get("title", ""), "handle": it[0]["snippet"].get("customUrl", "")}
         with _lock:
-            _save({"secret": {"id": s["id"], "key": s["key"], "refresh": r["refresh_token"]}, "channel": ch, "since": time.time(), "expired": False})
+            _save({"secret": {"id": s["id"], "key": s["key"], "refresh": r["refresh_token"]}, "channel": ch, "since": time.time(), "expired": False, "lists": lists})
         return ch["title"]
     except YTError as e:
         _pending["error"] = str(e)
@@ -298,7 +307,22 @@ def status():
     d = _read()
     s = d.get("secret", {})
     return {"configured": bool(s.get("id")), "connected": bool(s.get("refresh")) and not d.get("expired"), "expired": bool(s.get("refresh")) and bool(d.get("expired")),
-            "channel": d.get("channel") if s.get("refresh") else None, "error": _pending.get("error", ""), "categories": CATEGORIES, "first": first()}
+            "channel": d.get("channel") if s.get("refresh") else None, "error": _pending.get("error", ""), "categories": CATEGORIES, "first": first(),
+            "lists": bool(s.get("refresh")) and bool(d.get("lists"))}
+
+
+def playlists():
+    """Las listas de reproducción del canal. Solo si se dio el permiso opcional."""
+    if not status()["lists"]:
+        raise ValueError("Primero activa las listas en Ajustes, «YouTube».")
+    out, page = [], ""
+    for _ in range(10):
+        r = _api("playlists", part="snippet,contentDetails", mine="true", maxResults=50, **({"pageToken": page} if page else {}))
+        out += [{"id": x["id"], "title": x["snippet"].get("title", ""), "count": (x.get("contentDetails") or {}).get("itemCount", 0)} for x in r.get("items", [])]
+        page = r.get("nextPageToken", "")
+        if not page:
+            break
+    return sorted(out, key=lambda x: x["title"].lower())
 
 
 # ------------------------------------------------------------ publicaciones
@@ -359,6 +383,41 @@ def _tags(tags):
     return out
 
 
+def hashtags():
+    """Los hashtags guardados y los que más se repiten en lo ya publicado."""
+    try:
+        fav = _clean(json.loads(FAVS.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        fav = []
+    n, show, mine = {}, {}, {x.lower() for x in fav}
+    for p in pubs()[-200:]:
+        for t in _clean(p.get("tags")):
+            n[t.lower()] = n.get(t.lower(), 0) + 1
+            show[t.lower()] = t
+    used = sorted((k for k in n if n[k] > 1 and k not in mine), key=lambda k: -n[k])[:8]
+    return {"fav": fav, "used": [show[k] for k in used]}
+
+
+def _clean(tags):
+    out = []
+    for t in tags if isinstance(tags, list) else []:
+        t = re.sub(r"\W", "", str(t))[:60]
+        if t and t.lower() not in [x.lower()[1:] for x in out]:
+            out.append("#" + t)
+    return out
+
+
+def set_hashtags(tags):
+    if not isinstance(tags, list):
+        raise ValueError("Faltan los hashtags.")
+    tags = _clean(tags)
+    if len(tags) > 40:
+        raise ValueError("Puedes guardar hasta 40 hashtags.")
+    with _lock:
+        _write(FAVS, tags)
+    return hashtags()
+
+
 def _when(s):
     if not s:
         return ""
@@ -390,6 +449,11 @@ def add(body):
     items = body.get("items")
     if not isinstance(items, list) or not 1 <= len(items) <= 50:
         raise ValueError("Elige entre 1 y 50 clips.")
+    pl = {}
+    if body.get("playlist"):
+        pl = next(({"id": x["id"], "title": x["title"]} for x in playlists() if x["id"] == body["playlist"]), {})
+        if not pl:
+            raise ValueError("Esa lista ya no existe. Elige otra.")
     old, new = pubs(), []
     for it in items:
         p = store.load(str(it.get("pid", "")))
@@ -413,7 +477,13 @@ def add(body):
             raise ValueError("Ese clip ya se subió o se está subiendo" + tag + ".")
         new.append({"id": store.new_id(10), "pid": p["id"], "cid": c["id"], "channel": st["channel"], "title": title, "description": desc, "tags": _tags(it.get("tags")),
                     "privacy": privacy, "publish_at": when, "kids": body["kids"], "category": cat, "notify": body.get("notify") is not False,
-                    "synthetic": body.get("synthetic") is True, "status": "en cola", "progress": 0, "created": time.time(), "video": "", "error": "", "session": "", "sent": 0})
+                    "synthetic": body.get("synthetic") is True, "playlist": pl, "listed": "", "at": float(c.get("start") or 0), "status": "en cola", "progress": 0, "created": time.time(), "video": "", "error": "", "session": "", "sent": 0})
+    # en lote van siempre en el orden del video, para que en el canal y en la lista queden igual
+    pids = list(dict.fromkeys(p["pid"] for p in new))
+    new.sort(key=lambda p: (p["publish_at"], pids.index(p["pid"]), p["at"]))
+    lot = store.new_id(8) if len(new) > 1 and not any(p["publish_at"] for p in new) else ""
+    for p in new:
+        p["lot"] = lot
     with _lock:
         _write(PUBS, pubs() + new)
     for p in new:
@@ -435,8 +505,20 @@ def retry(i):
         raise ValueError("No hay nada que reintentar.")
     if p["publish_at"]:
         _when(p["publish_at"])
-    _set(i, status="en cola", progress=0, error="", stop=False)
+    _set(i, status="en cola", progress=0, error="", stop=False, held=False)
     _push(i)
+    for x in pubs():                     # y los que esperaban a este, en su orden
+        if p.get("lot") and x.get("lot") == p["lot"] and x.get("held") and x["id"] != i and x["at"] >= p["at"]:
+            _set(x["id"], status="en cola", progress=0, error="", stop=False, held=False)
+            _push(x["id"])
+
+
+def _hold(p):
+    """Si uno de un lote falla, los que siguen lo esperan: si no, quedarían en otro orden."""
+    if p.get("lot"):
+        for x in pubs():
+            if x.get("lot") == p["lot"] and x["status"] == "en cola" and x["id"] != p["id"]:
+                _set(x["id"], status="error", held=True, error=f"Espera a «{p['title'][:50]}», para no perder el orden. Reintenta aquel y este sigue solo.")
 
 
 def cancel(i):
@@ -597,6 +679,8 @@ def _upload(p, f):
 
 def _run(i):
     p = _one(i)
+    if p and p.get("video") and p.get("listed") == "pendiente":
+        return _to_list(i)
     if not p or p["status"] not in ACTIVE:
         return
     try:
@@ -609,15 +693,64 @@ def _run(i):
         v = _upload(_one(i), f)
         got = (v.get("status") or {}).get("privacyStatus", "")
         note = "YouTube lo dejó en privado." if got == "private" and p["privacy"] != "private" else ""
-        _set(i, status="procesando", progress=100, video=str(v["id"]), session="", error="", note=note, done=time.time())
+        _set(i, status="procesando", progress=100, video=str(v["id"]), session="", error="", note=note, done=time.time(), listed="pendiente" if p.get("playlist") else "")
         _quiet(f.unlink)                 # si no se puede ahora, se borra al volver a abrir
+        _to_list(i)
     except Stopped:
         _set(i, status="cancelada", session="", sent=0)
         _quiet((TMP / f"{i}.mp4").unlink)
     except Exception as e:
         if not isinstance(e, YTError):
             traceback.print_exc()
+        if (_one(i) or {}).get("video"):
+            return                       # ya subió: lo que falló fue la lista
         _set(i, status="error", error=str(e)[:400] if isinstance(e, YTError) else f"No se pudo publicar: {str(e)[:200]}")
+        _hold(p)
+
+
+def _in_list(p):
+    r = _api("playlistItems", part="id", playlistId=p["playlist"]["id"], videoId=p["video"], maxResults=1)
+    return bool(r.get("items"))
+
+
+def _to_list(i):
+    """Agrega el video ya subido al final de su lista."""
+    p = _one(i)
+    if not p or p.get("listed") != "pendiente" or not p.get("video"):
+        return
+    err = "No se pudo agregar a la lista."
+    for n in range(len(WAITS[:5]) + 1):
+        if n:
+            _wake.wait(WAITS[n - 1])
+        try:
+            if (_read().get("channel") or {}).get("id") != p["channel"]["id"]:
+                raise YTError("El canal conectado ya no es el mismo.")
+            if (n or p.get("list_try")) and _in_list(p):        # quizá sí entró y se perdió la respuesta
+                _set(i, listed="si", list_error="")
+                return
+            _set(i, list_try=True)
+            _api("playlistItems", {"snippet": {"playlistId": p["playlist"]["id"], "resourceId": {"kind": "youtube#video", "videoId": p["video"]}}}, part="snippet")
+            _set(i, listed="si", list_error="")
+            return
+        except YTError as e:
+            err = str(e)
+            if e.reason == "videoAlreadyInPlaylist":
+                _set(i, listed="si", list_error="")
+                return
+            if not (e.reason in ("net", "videoNotFound", "rateLimitExceeded", "userRateLimitExceeded") or e.code in (409, 500, 502, 503, 504)):
+                break
+        except Exception:
+            traceback.print_exc()
+            break
+    _set(i, listed="no", list_error=err[:300])
+
+
+def relist(i):
+    p = _one(i)
+    if not p or p.get("listed") != "no" or not p.get("video"):
+        raise ValueError("No hay nada que reintentar.")
+    _set(i, listed="pendiente", list_error="")
+    _push(i)
 
 
 def _worker():
@@ -668,5 +801,5 @@ def start():
     threading.Thread(target=_worker, daemon=True, name="youtube").start()
     threading.Thread(target=_checker, daemon=True, name="youtube-estado").start()
     for p in pubs():                     # lo que la persona ya había confirmado sigue donde se quedó
-        if p["status"] in ACTIVE:
+        if p["status"] in ACTIVE or p.get("listed") == "pendiente":
             _push(p["id"])
