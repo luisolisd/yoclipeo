@@ -2,6 +2,10 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.3.3
+- Conectar YouTube es más fácil: los pasos usan el modo personal de Google, sin marca, dominio ni publicar la app.
+- La primera publicación ya puede ser pública o programada, y de varios clips. Subirla en privado queda como sugerencia.
+
 ## 1.3.2
 - Versión de prueba del botón «Actualizar». No cambia nada más.
 

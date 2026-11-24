@@ -52,14 +52,15 @@ En «Automático» usa lo primero que encuentre listo: Claude, otro servidor, Ol
 ## Publicar en YouTube (opcional)
 YouTube solo acepta subidas de programas registrados en Google. Cada persona registra el suyo: es gratis, se hace una vez y no hay que programar nada. Así nadie comparte claves, y el límite diario de subidas es solo tuyo.
 
-1. Entra a [Google Cloud](https://console.cloud.google.com/projectcreate) con la cuenta de tu canal y crea un proyecto.
-2. Abre [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) y pulsa **Habilitar**.
-3. En [Google Auth Platform](https://console.cloud.google.com/auth/overview) pulsa **Comenzar**: un nombre, tu correo y público **Externo**.
-4. En [Público](https://console.cloud.google.com/auth/audience) pulsa **Publicar app**. Si se queda en pruebas, el permiso caduca a los 7 días.
-5. En [Clientes](https://console.cloud.google.com/auth/clients) crea uno de tipo **App de escritorio** y descarga su JSON en ese momento.
-6. En YoClipeo, **Ajustes → YouTube**, elige ese archivo y pulsa **Conectar con YouTube**. Google avisará que la app no está verificada: es la tuya, entra en «Configuración avanzada» y continúa. Deja marcados los dos permisos.
+1. Entra al [modo personal de Google](https://console.cloud.google.com/auth/overview/personal) con la misma cuenta de tu canal. Crea un proyecto nuevo por ti.
+2. En tipo de aplicación elige **App de escritorio**, acepta los términos y pulsa **Continuar**.
+3. Pulsa **Descargar JSON** en ese momento: después Google ya no muestra la clave completa.
+4. Con ese proyecto elegido arriba, abre [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) y pulsa **Habilitar**.
+5. En YoClipeo, **Ajustes → YouTube**, elige ese archivo y pulsa **Conectar con YouTube**. Deja marcados los dos permisos.
 
-No compartas ese archivo. La primera publicación va en privado para que revises cómo queda. Cada envío pide confirmación. Para quitar el permiso, pulsa **Desconectar** en Ajustes o entra a [tu cuenta de Google](https://myaccount.google.com/permissions).
+No hace falta marca, dominio ni publicar la app. Solo funciona con la cuenta de Google que la creó; si sale `client_user_mismatch`, entraste con otra.
+
+No compartas ese archivo. Te sugerimos subir el primer clip en privado para revisar cómo queda. Cada envío pide confirmación. Para quitar el permiso, pulsa **Desconectar** en Ajustes o entra a [tu cuenta de Google](https://myaccount.google.com/permissions).
 
 Al publicar aplican los [Términos de YouTube](https://www.youtube.com/t/terms) y la [política de privacidad de Google](https://policies.google.com/privacy).
 

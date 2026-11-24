@@ -110,12 +110,12 @@ function toast(txt, bad = false) {
 const guard = (fn) => async (...a) => { try { return await fn(...a); } catch (e) { toast(e.message, true); } };
 
 // ask({title, text, ok, danger, fields:[{name,label,value,placeholder}]}) → null si se cancela, {valores} si se acepta
-function ask({ title, text = "", ok = "Aceptar", danger = false, fields = [] }) {
+function ask({ title, text = "", ok = "Aceptar", no = "Cancelar", danger = false, fields = [] }) {
   return new Promise(res => {
     const d = document.createElement("dialog"); d.className = "dlg";
     d.innerHTML = `<form method="dialog"><div class="in"><h2>${esc(title)}</h2>${text ? `<p class="mut">${esc(text)}</p>` : ""}
       ${fields.map(f => `<label class="fld" style="margin-top:14px"><span class="lb">${esc(f.label)}</span><input type="text" name="${f.name}" value="${esc(f.value ?? "")}" placeholder="${esc(f.placeholder ?? "")}" maxlength="${f.max || 120}" autocomplete="off"></label>`).join("")}</div>
-      <div class="acts"><button type="button" class="btn gh" data-no>Cancelar</button><button type="submit" class="btn pri" data-yes>${esc(ok)}</button></div></form>`;
+      <div class="acts"><button type="button" class="btn gh" data-no>${esc(no)}</button><button type="submit" class="btn pri" data-yes>${esc(ok)}</button></div></form>`;
     if (danger) { const y = $("[data-yes]", d); y.style.background = y.style.borderColor = "var(--bad)"; y.style.color = "#fff"; }
     let out = null;
     $("form", d).onsubmit = () => { out = Object.fromEntries(fields.map(f => [f.name, $(`[name="${f.name}"]`, d).value])); };

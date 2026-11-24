@@ -137,6 +137,7 @@ REASONS = {
     "invalidPublishAt": "YouTube no aceptó la fecha.", "invalidCategoryId": "YouTube no aceptó la categoría.", "mediaBodyRequired": "El video llegó vacío.",
     "invalid_client": "Google no reconoce la app. Vuelve a elegir su archivo.", "invalid_grant": "El permiso caducó o se quitó. Vuelve a conectar YouTube.",
     "redirect_uri_mismatch": "La app de Google debe ser de tipo «App de escritorio».", "access_denied": "No se dio el permiso.",
+    "client_user_mismatch": "Esa app de Google solo funciona con la cuenta que la creó.",
 }
 
 
@@ -339,7 +340,7 @@ def listing(pid="", cid=""):
 
 
 def first():
-    """¿Es la primera? La primera siempre va en privado."""
+    """¿Es la primera? La ventana sugiere subirla en privado."""
     return not any(p.get("video") for p in pubs())
 
 
@@ -408,8 +409,6 @@ def add(body):
             raise ValueError("Elige quién puede verlo.")
         if when and privacy != "private":
             raise ValueError("Un video programado se sube en privado hasta su hora.")
-        if st["first"] and (privacy != "private" or when or len(items) > 1):
-            raise ValueError("La primera publicación va sola y en privado, para que revises cómo queda.")
         if not it.get("again") and any(x["pid"] == p["id"] and x["cid"] == c["id"] and (x.get("video") or x["status"] in ACTIVE) for x in old + new):
             raise ValueError("Ese clip ya se subió o se está subiendo" + tag + ".")
         new.append({"id": store.new_id(10), "pid": p["id"], "cid": c["id"], "channel": st["channel"], "title": title, "description": desc, "tags": _tags(it.get("tags")),

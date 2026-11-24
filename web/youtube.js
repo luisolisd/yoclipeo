@@ -10,12 +10,12 @@ const ytLegal = () => `${ext(YT_TERMS, "Términos de YouTube")} y la ${ext(G_PRI
 
 // ------------------------------------------------------------ Ajustes
 const YT_STEPS = [
-  `Entra a ${ext("https://console.cloud.google.com/projectcreate", "Google Cloud")} con la cuenta de tu canal y crea un proyecto.`,
-  `Abre ${ext("https://console.cloud.google.com/apis/library/youtube.googleapis.com", "YouTube Data API v3")} y pulsa «Habilitar».`,
-  `En ${ext("https://console.cloud.google.com/auth/overview", "Google Auth Platform")} pulsa «Comenzar», pon un nombre, tu correo y público «Externo».`,
-  `En ${ext("https://console.cloud.google.com/auth/audience", "Público")} pulsa «Publicar app». Si se queda en pruebas, el permiso caduca a los 7 días.`,
-  `En ${ext("https://console.cloud.google.com/auth/clients", "Clientes")} crea uno de tipo «App de escritorio» y descarga su archivo JSON en ese momento.`,
-  `Elige ese archivo aquí y pulsa «Conectar con YouTube». Google avisará que la app no está verificada: es la tuya, entra en «Configuración avanzada» y continúa. Deja marcados los dos permisos.`];
+  `Entra al ${ext("https://console.cloud.google.com/auth/overview/personal", "modo personal de Google")} con la misma cuenta de tu canal. Crea un proyecto nuevo por ti.`,
+  `En tipo de aplicación elige «App de escritorio», acepta los términos y pulsa «Continuar».`,
+  `Pulsa «Descargar JSON» en ese momento: después Google ya no muestra la clave completa.`,
+  `Con ese proyecto elegido arriba, abre ${ext("https://console.cloud.google.com/apis/library/youtube.googleapis.com", "YouTube Data API v3")} y pulsa «Habilitar».`,
+  `Elige aquí el archivo y pulsa «Conectar con YouTube». Deja marcados los dos permisos.`];
+const YT_NOTE = `No hace falta marca, dominio ni publicar la app. Solo funciona con la cuenta que la creó; si sale <b>client_user_mismatch</b>, entraste con otra.`;
 
 function ytPanel(el) {
   let sig = "", waiting = 0, open = false;
@@ -47,7 +47,7 @@ function ytPanel(el) {
       : s.configured ? `<div class="ytch"><i class="${s.expired ? "warn" : ""}"></i><div><b>${s.expired ? "El permiso caducó o se quitó" : "Falta conectar tu canal"}</b><span class="mut small">${waiting ? "Termina en la pestaña de Google…" : s.expired ? "Vuelve a conectar para seguir publicando." : "Tu app de Google ya está guardada."}</span></div></div>
         ${s.error ? `<p class="err" style="margin-bottom:10px">${esc(s.error)}</p>` : ""}<div class="eqfoot"><button type="button" class="btn pri" data-on>${s.expired ? "Volver a conectar" : "Conectar con YouTube"}</button>${s.expired ? `<button type="button" class="btn gh" data-off>Desconectar</button>` : `<button type="button" class="btn gh" data-clear>Usar otra app</button>`}</div>`
       : `<div class="eqfoot">${pick("Elegir el archivo de tu app", "pri")}</div>`;
-    if (!s.connected) el.innerHTML += `<details class="ythow"${open || !s.configured ? " open" : ""}><summary>Cómo conseguir ese archivo</summary><ol>${YT_STEPS.map(x => `<li>${x}</li>`).join("")}</ol></details>
+    if (!s.connected) el.innerHTML += `<details class="ythow"${open || !s.configured ? " open" : ""}><summary>Cómo conseguir ese archivo</summary><ol>${YT_STEPS.map(x => `<li>${x}</li>`).join("")}</ol><p class="hint">${YT_NOTE}</p></details>
         <p class="mut small">Con esto, ${esc(window.APP_NAME)} podrá subir videos a tu canal y ver cómo quedaron. El permiso se guarda cifrado en este PC y no pasa por ningún otro servidor. Al conectar aceptas los ${ytLegal()}.</p>`;
     const on = $("[data-on]", el), o = $("[data-off]", el), c = $("[data-clear]", el), inp = $("input[type=file]", el);
     if (on) on.onclick = connect; if (o) o.onclick = () => off(true); if (c) c.onclick = () => off(false);
@@ -65,7 +65,6 @@ async function ytPublish(pid, clips) {
     if (await ask({ title: yt.expired ? "El permiso de YouTube caducó" : "Conecta tu canal de YouTube", text: yt.expired ? "Vuelve a conectar en Ajustes para publicar." : "Se hace una sola vez, en Ajustes.", ok: "Ir a Ajustes" })) location.hash = "#/ajustes/youtube";
     return false;
   }
-  if (yt.first && clips.length > 1) throw new Error("La primera publicación va sola y en privado. Elige un solo clip.");
   if (clips.length > 50) throw new Error("Elige hasta 50 clips a la vez.");
   const before = (c) => mine.find(p => p.cid === c.id && (p.video || YT_ON.includes(p.status)));
   let list = clips.map(c => ({ c, title: (c.title || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 100), desc: (c.description || "").replace(/[<>]/g, ""), tags: (c.hashtags || []).map(t => t.startsWith("#") ? t : "#" + t).join(" "), old: before(c) }));
@@ -73,7 +72,7 @@ async function ytPublish(pid, clips) {
   const d = document.createElement("dialog"); d.className = "sheet pub";
   d.innerHTML = `<header><h2>Publicar en YouTube</h2><button type="button" class="btn gh sq" data-x aria-label="Cerrar">${icon("close", 18)}</button></header>
     <div class="scroll"><div class="ytch"><i class="on"></i><div><b>${esc(yt.channel.title)}</b><span class="mut small">${esc(yt.channel.handle || "Tu canal")}</span></div></div>
-      ${yt.first ? `<p class="pubnote">La primera va en privado para que revises cómo queda. Después podrás publicar y programar.</p>` : ""}
+      ${yt.first ? `<p class="pubnote">Es tu primera publicación. Sugerencia: sube un clip en privado y revisa cómo queda.</p>` : ""}
       <div data-list></div>
       <h3>Quién puede verlo</h3><div class="seg" data-see data-value="private"><button data-v="private">Privado</button><button data-v="unlisted">Oculto</button><button data-v="public">Público</button><button data-v="plan">Programado</button></div>
       <div data-plan hidden style="margin-top:14px"><div class="two"><label class="fld"><span class="lb" data-wl>Fecha y hora</span><input type="datetime-local" data-when></label><label class="fld" data-gapf><span class="lb">Uno cada (horas)</span><input type="number" data-gap min="1" max="336" step="1" value="24"></label></div></div>
@@ -84,9 +83,14 @@ async function ytPublish(pid, clips) {
       <label class="fld" style="margin-top:12px"><span class="lb">Categoría</span><select data-cat>${Object.entries(yt.categories).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
       <p class="mut small">Se sube en 1080p; si hace falta, primero se exporta. Al publicar aceptas los ${ytLegal()}.</p></div>
     <footer><div class="err" role="alert"></div><button type="button" class="btn pri lg" data-go></button></footer>`;
-  const err = $(".err", d), see = choice($("[data-see]", d), () => sync()), kids = choice($("[data-kids]", d), () => err.textContent = ""), when = $("[data-when]", d), gap = $("[data-gap]", d);
+  const err = $(".err", d), see = choice($("[data-see]", d), () => { sync(); sure(); }), kids = choice($("[data-kids]", d), () => err.textContent = ""), when = $("[data-when]", d), gap = $("[data-gap]", d);
   see.value = pref.get("yt-ve", "private"); if (yt.first || !["private", "unlisted", "public", "plan"].includes(see.value)) see.value = "private";
-  if (yt.first) $$("button", see.el).forEach(b => b.disabled = b.dataset.v !== "private");
+  let knows = !yt.first;                     // la primera vez, antes de que lo vea cualquiera, se pregunta
+  async function sure() {
+    if (knows || !["public", "plan"].includes(see.value)) return;
+    const plan = see.value === "plan", yes = await ask({ title: "¿Estás seguro?", text: `Es tu primera publicación y la podrá ver cualquiera${plan ? " cuando llegue la hora" : ""}. Te sugerimos subir primero un clip en privado.`, ok: plan ? "Sí, programar" : "Sí, en público", no: "Mejor en privado" });
+    if (yes) knows = true; else { see.value = "private"; sync(); }
+  }
   when.value = toLocal(start); when.min = toLocal(new Date()); gap.value = pref.get("yt-horas", "24"); $("[data-cat]", d).value = pref.get("yt-cat", "24"); if (!$("[data-cat]", d).value) $("[data-cat]", d).value = "24";
   const at = (i) => { const t = new Date(when.value); return isNaN(t) ? null : new Date(+t + i * Math.max(1, +gap.value || 24) * 3600e3); };
   const verb = () => { const n = list.length, o = n > 1 ? ` ${n} clips` : ""; return see.value === "plan" ? "Programar" + o : see.value === "public" ? "Publicar" + o : `Subir${o} ${see.value === "private" ? "en privado" : "como oculto"}`; };
