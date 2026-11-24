@@ -1,0 +1,21 @@
+# Crea la Release cuando un commit sube VERSION (cliper/config.py), con las notas de CAMBIOS.md y un ZIP.
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: release
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - run: python3 .github/release.py
+        env:
+          GH_TOKEN: ${{ github.token }}

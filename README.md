@@ -12,7 +12,7 @@ Convierte videos largos en clips verticales para TikTok, Reels y Shorts. Corre e
 - Opcional: [Ollama](https://ollama.com) para que la IA elija los momentos sin internet ni costo.
 
 ## Instalar
-1. En [la página del proyecto](https://github.com/luisolisd/yoclipeo): **Code → Download ZIP**. Extrae el ZIP en una carpeta.
+1. Descarga el ZIP de [la última versión](https://github.com/luisolisd/yoclipeo/releases/latest) y extráelo en una carpeta.
 2. Doble clic en **`Instalar YoClipeo.bat`**. Crea su propio entorno en `.venv` y no toca otros programas.
 3. Doble clic en **`Iniciar YoClipeo.bat`**. Se abre http://127.0.0.1:8765. Cierra la ventana negra para apagarlo.
 
