@@ -200,8 +200,9 @@
         <div class="quals"><button class="pri" data-q="1080p"><b>1080p</b><small>La mejor</small></button><button data-q="720p"><b>720p</b><small>Más ligero</small></button><button data-q="480p"><b>480p</b><small>Borrador</small></button><button data-q="mp3"><b>MP3</b><small>Solo el audio</small></button></div>
         <div id="ejobs"></div>
         <div class="grp"><div class="hd"><h3>Archivos</h3><button class="btn sm gh" id="eopen"><span data-ic="folder" data-s="15"></span>Abrir carpeta</button></div><p class="mut small" id="noexp">Este clip aún no se ha exportado.</p><div id="eexports" class="files"></div></div>
-        <div class="grp"><div class="hd"><h3>Para publicar</h3><button class="btn sm" id="copypub"><span data-ic="copy" data-s="15"></span>Copiar todo</button></div>
-          <label class="fld"><span class="lb">Descripción</span><textarea id="e-desc" rows="3"></textarea></label><label class="fld"><span class="lb">Hashtags</span><input id="e-tags" type="text"></label></div>
+        <div class="grp"><div class="hd"><h3>Para publicar</h3><button class="btn sm gh" id="copypub"><span data-ic="copy" data-s="15"></span>Copiar todo</button></div>
+          <label class="fld"><span class="lb">Descripción</span><textarea id="e-desc" rows="3"></textarea></label><label class="fld"><span class="lb">Hashtags</span><input id="e-tags" type="text"></label>
+          <button class="btn" id="eyt" style="width:100%"><span data-ic="upload" data-s="16"></span>Publicar en YouTube</button><div id="epubs" class="files" style="margin-top:10px"></div></div>
         <div class="grp" id="reasonbox"><h3>Por qué lo eligió</h3><p class="hint" id="e-reason"></p></div>
       </div>
     </div>
@@ -253,6 +254,7 @@
     <div class="setgrid"><div><h3>Exportación</h3><p class="mut">Con qué se codifica el video. Componer cada fotograma es lo que más tarda, así que la GPU rara vez lo acelera.</p></div><div><label class="fld"><span class="lb">Codificador</span><select id="s-encoder"></select></label></div></div>
     <div class="savebar"><button class="btn pri">Guardar ajustes</button><span class="ok" id="s-ok" role="status"></span></div>
   </form>
+  <div class="setgrid" id="s-ytsec"><div><h3>YouTube</h3><p class="mut">Publica y programa clips en tu canal, con tu propia app de Google. Nada se sube sin que lo confirmes.</p></div><div id="s-yt"><p class="mut">Comprobando…</p></div></div>
   <div class="setgrid"><div><h3>Predeterminados</h3><p class="mut">Se guardan desde un clip («Estilo del clip») o al crear un proyecto. Cada carpeta usa los suyos; lo que le falte sale de los generales.</p></div><div id="s-defs"></div></div>
   <div class="setgrid" id="s-about" hidden><div><h3>Acerca de</h3></div><div><p id="s-ver"></p><p id="s-author" style="margin-top:6px"></p><p class="mut" id="s-notice" style="margin-top:6px"></p><div id="s-upd" style="margin-top:16px"></div><div id="s-cafe" hidden><p style="margin:16px 0 10px">Si te sirve, puedes apoyar su desarrollo.</p><a class="btn" target="_blank" rel="noopener noreferrer"><span data-ic="coffee" data-s="16"></span>Invítame un café</a></div></div></div>
 </div></template>
@@ -267,6 +269,7 @@
 <script src="editor.js"></script>
 <script src="equipo.js"></script>
 <script src="actualizar.js"></script>
+<script src="youtube.js"></script>
 <script src="pages.js"></script>
 <script src="app.js"></script>
 </body>

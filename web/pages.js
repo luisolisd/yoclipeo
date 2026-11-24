@@ -6,9 +6,10 @@ function cola() {
   mount("tpl-cola");
   let sig = "";
   every(1000, async () => {
-    let js, ps, lv; try { [js, ps, lv] = await Promise.all([api("/api/jobs"), api("/api/projects"), api("/api/directos")]); } catch (e) { return; }
+    let js, ps, lv, yt; try { [js, ps, lv, yt] = await Promise.all([api("/api/jobs"), api("/api/projects"), api("/api/directos"), api("/api/publicaciones")]); } catch (e) { return; }
+    yt = yt.filter(p => !p.hidden);
     lv = lv.filter(liveOn); const box = $("#qbox"); if (!box) return;
-    const s = JSON.stringify([js, lv.map(liveText), ps.map(p => [p.id, p.status, p.progress, p.message])]); if (s === sig) return; sig = s;
+    const s = JSON.stringify([js, ytSig(yt), lv.map(liveText), ps.map(p => [p.id, p.status, p.progress, p.message])]); if (s === sig) return; sig = s;
     const P = Object.fromEntries(ps.map(p => [p.id, p])), running = js.filter(j => ["en cola", "renderizando", "descargando"].includes(j.status)).sort((a, b) => a.created - b.created), bad = js.filter(j => j.status === "error"), done = js.filter(j => j.status === "listo"), waits = ps.filter(isWait), busy = ps.filter(p => isBusy(p) && !isWait(p));
     const clipOf = (j) => ((P[j.pid] || {}).marks || []).find(m => m.id === j.cid), what = (j) => j.kind === "download" ? (j.title || j.url) : (clipOf(j) || {}).t || "Clip borrado", from = (j) => j.kind === "export" && P[j.pid] ? `, ${P[j.pid].name}` : "";
     const th = (j) => j.kind === "export" ? `<i style="flex:none;width:27px;height:48px;border-radius:2px;background:var(--well) url('/api/projects/${j.pid}/thumb/${j.cid}') center/cover"></i>` : `<span style="width:27px;display:grid;place-items:center;color:var(--mut)">${icon("download", 18)}</span>`;
@@ -17,9 +18,11 @@ function cola() {
       (busy.length ? `<section class="block"><h2>Analizando</h2>${busy.map(p => `<a class="proc" style="display:block;color:inherit;text-decoration:none" href="#/p/${p.id}"><div class="ms">${esc(p.name)}<span>${Math.round(p.progress || 0)}%</span></div>${stagesHtml(p)}<div class="mut small" style="margin-top:10px">${esc(p.message || "")}</div></a>`).join("")}</section>` : "") +
       (lv.length || waits.length ? `<section class="block"><h2>Directos que sigues</h2>${waits.map(p => `<a class="liveb activo" style="color:inherit;text-decoration:none" href="#/p/${p.id}"><i></i><div><b>${esc(p.name)}</b><span>${esc(p.message || "")}</span></div></a>`).join("")}${lv.map(s => `<a class="liveb ${s.status}" style="color:inherit;text-decoration:none" href="#/"><i></i><div><b>${esc(s.base)}</b><span>${esc(liveText(s))}</span></div></a>`).join("")}</section>` : "") +
       (running.length ? `<section class="block"><h2>En marcha</h2><div class="files">${running.map(j => `<div class="file">${th(j)}<span class="n">${esc(what(j))}<small>${tag(j)}${j.status === "en cola" ? ", en espera" : j.fps ? `, ${j.fps} fps` : ""}${esc(from(j))}</small><div class="line" style="margin-top:6px"><i style="width:${j.progress}%"></i></div></span><span class="num">${Math.round(j.progress)}%</span></div>`).join("")}</div></section>` : "") +
+      (yt.length ? `<section class="block"><h2>YouTube</h2><div class="files" id="qyt">${ytRows(yt)}</div></section>` : "") +
       (bad.length ? `<section class="block"><h2>Con error</h2><div class="files">${bad.map(j => `<div class="file">${th(j)}<span class="n" style="white-space:normal">${esc(what(j))}<small>${tag(j)}</small><span class="err">${esc((j.error || "").slice(0, 400))}</span></span></div>`).join("")}</div></section>` : "") +
       (done.length ? `<section class="block"><h2>Terminado en esta sesión</h2><div class="files">${done.map(j => `<div class="file">${th(j)}<span class="n">${esc(j.file)}<small>${tag(j)}${esc(from(j))}</small></span><a class="btn sm" href="${j.kind === "download" ? `/api/downloads/file/${encodeURIComponent(j.file)}` : `/api/projects/${j.pid}/files/${encodeURIComponent(j.file)}`}" download>${icon("download", 15)}Guardar</a></div>`).join("")}</div></section>` : "") ||
       `<div class="empty">${icon("queue", 34)}<h2>No hay nada en marcha</h2><p>Aquí verás los análisis, las exportaciones y las descargas mientras trabajan. Puedes seguir editando: no se detienen.</p></div>`;
+    if ($("#qyt")) ytBind($("#qyt"), () => { sig = ""; });
   });
 }
 
@@ -124,7 +127,8 @@ async function ajustes() {
   if (!location.hash.startsWith("#/ajustes")) return;
   mount("tpl-ajustes");
   if (window.APP_VERSION) { $("#s-about").hidden = false; $("#s-ver").textContent = `${window.APP_NAME}, versión ${window.APP_VERSION}`; $("#s-author").textContent = window.APP_AUTHOR; $("#s-notice").textContent = window.APP_NOTICE; }
-  updPanel($("#s-upd"));
+  updPanel($("#s-upd")); ytPanel($("#s-yt"));
+  if (location.hash.endsWith("/youtube")) setTimeout(() => $("#s-ytsec") && $("#s-ytsec").scrollIntoView(), 350);
   if (window.APP_DONATE) { $("#s-cafe").hidden = false; $("#s-cafe a").href = window.APP_DONATE; }
   const dirty = () => { $("#s-ok").textContent = "Cambios sin guardar"; $("#s-ok").style.color = "var(--mut)"; };
   const engine = choice($("#s-engine"), dirty); engine.value = s.engine;

@@ -1,5 +1,6 @@
 """Colas de trabajo en segundo plano: análisis de proyectos, exportaciones y descargas."""
 import gc
+import hashlib
 import json
 import queue
 import re
@@ -247,6 +248,18 @@ def make_thumb(pid, cid):
 
 # ------------------------------------------------------------ exportación
 
+def _sig(pl):
+    return hashlib.sha1(json.dumps(pl, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def clip_sig(pid, cid):
+    """Huella de cómo saldría el clip ahora mismo (para saber si lo ya exportado sigue igual)."""
+    try:
+        return _sig(plan.build(pid, cid))
+    except (KeyError, TypeError):
+        return None
+
+
 def run_export(j):
     pid, cid, quality = j["pid"], j["cid"], j["quality"]
     try:
@@ -265,7 +278,7 @@ def run_export(j):
             srcB = pB["source"]["file"] if pB else None
         render.export(pl, p["source"]["file"], out, quality,
                       lambda f, fps: _set(j, progress=round(f * 100, 1), fps=round(fps, 1)), srcB)
-        rec = {"quality": quality, "file": out.name, "size": out.stat().st_size, "created": time.time()}
+        rec = {"quality": quality, "file": out.name, "size": out.stat().st_size, "created": time.time(), "sig": _sig(pl)}
         store.update(pid, lambda q: _add_export(q, cid, rec))
         _set(j, status="listo", progress=100, file=out.name)
     except Exception as e:

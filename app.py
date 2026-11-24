@@ -20,7 +20,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from cliper import actualizar, arranque, config, defaults, directo, equipo, jobs, plan, store, sync
+from cliper import actualizar, arranque, config, defaults, directo, equipo, jobs, plan, store, sync, youtube
 from cliper.analyze import make_clip
 from cliper.transcribe import all_words
 
@@ -210,6 +210,73 @@ def update_install(request: Request, body: dict):
     except ValueError as e:
         raise HTTPException(409, str(e))
     return actualizar.status()
+
+
+# ------------------------------------------------------------ publicar en YouTube
+
+def _yt(request, fn, *a):
+    _from_here(request)
+    try:
+        return fn(*a)
+    except (ValueError, TypeError, AttributeError) as e:
+        raise HTTPException(400, str(e) if isinstance(e, ValueError) else "Faltan datos")
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/youtube")
+def yt_status():
+    return youtube.status()
+
+
+@app.post("/api/youtube/client")
+def yt_client(request: Request, body: dict):
+    _yt(request, youtube.set_client, body.get("id", ""), body.get("key", ""))
+    return youtube.status()
+
+
+@app.post("/api/youtube/connect")
+def yt_connect(request: Request):
+    return {"url": _yt(request, youtube.connect, PORT)}
+
+
+@app.post("/api/youtube/disconnect")
+def yt_disconnect(request: Request):
+    return {"note": _yt(request, youtube.clear), **youtube.status()}
+
+
+@app.get("/youtube/callback")
+def yt_callback(state: str = "", code: str = "", error: str = ""):
+    """Aquí vuelve Google después de pedir el permiso."""
+    import html
+    try:
+        t, m = "YouTube está conectado", f"Canal: {youtube.callback(state, code, error)}. Ya puedes cerrar esta pestaña y volver a {config.APP_NAME}."
+    except Exception as e:
+        t, m = "No se pudo conectar", str(e) if isinstance(e, youtube.YTError) else "Algo falló. Vuelve a intentarlo desde Ajustes."
+    page = ('<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>' + html.escape(t) +
+            '</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#12181a;color:#e9ece9;font:16px/1.5 system-ui">'
+            f'<main style="max-width:30rem;padding:24px"><h1 style="font-size:1.5rem">{html.escape(t)}</h1><p>{html.escape(m)}</p></main>')
+    return Response(page, media_type="text/html", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+                                                           "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
+
+
+@app.get("/api/publicaciones")
+def pub_list(pid: str = "", cid: str = ""):
+    return youtube.listing(pid, cid)
+
+
+@app.post("/api/publicaciones")
+def pub_add(request: Request, body: dict):
+    return _yt(request, youtube.add, body)
+
+
+@app.post("/api/publicaciones/{i}/{what}")
+def pub_do(request: Request, i: str, what: str):
+    fn = {"reintentar": youtube.retry, "cancelar": youtube.cancel, "quitar": youtube.forget}.get(what)
+    if not fn:
+        raise HTTPException(404)
+    _yt(request, fn, i)
+    return {"ok": True}
 
 
 # ------------------------------------------------------------ tu equipo
@@ -877,6 +944,7 @@ if __name__ == "__main__":
     jobs.start()
     equipo.start(_working)
     actualizar.start(watched)
+    youtube.start()
     if "--no-browser" not in sys.argv:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://{HOST}:{PORT}")).start()
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")

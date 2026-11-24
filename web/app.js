@@ -47,8 +47,8 @@ async function sysBadge() {
 }
 async function badge() {
   try {
-    const [js, ps, lv] = await Promise.all([api("/api/jobs"), api("/api/projects"), api("/api/directos")]);
-    const n = lv.filter(liveOn).length + js.filter(j => ["en cola", "renderizando", "descargando"].includes(j.status)).length + ps.filter(isBusy).length, b = $("#qbadge");
+    const [js, ps, lv, yt] = await Promise.all([api("/api/jobs"), api("/api/projects"), api("/api/directos"), api("/api/publicaciones")]);
+    const n = lv.filter(liveOn).length + yt.filter(p => YT_ON.includes(p.status)).length + js.filter(j => ["en cola", "renderizando", "descargando"].includes(j.status)).length + ps.filter(isBusy).length, b = $("#qbadge");
     b.hidden = !n; b.textContent = n; document.title = (n ? `(${n}) ` : "") + (window.APP_NAME || "Clips");
   } catch (e) {}
 }

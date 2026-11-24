@@ -71,6 +71,7 @@ function project(pid) {
       const lenEl = $(".len", el); if (look.value !== "list") $(".th", el).appendChild(lenEl);
       $(".more", el).onclick = (e) => menu(e.currentTarget, [
         { label: "Editar", icon: "pen", run: go }, { head: "Exportar" }, ...QUALS.map(([k, h]) => ({ label: k === "mp3" ? "MP3" : k, hint: h, icon: "out", run: async () => { await exportClip(pid, c.id, k); toast("En la cola de exportación"); jobTick(); } })), "-",
+        { label: "Publicar en YouTube", icon: "upload", run: () => ytPublish(pid, [c]) },
         { label: "Duplicar", icon: "copy", run: async () => { await api(`/api/projects/${pid}/clips/${c.id}/duplicate`, { method: "POST" }); tick(); } },
         { label: "Quitar clip", icon: "trash", bad: true, run: () => removeClips([c.id]) }]);
       box.appendChild(el);
@@ -86,9 +87,10 @@ function project(pid) {
   function pick(id) { sel.has(id) ? sel.delete(id) : sel.add(id); $$(".clip").forEach(el => { const on = sel.has(el.dataset.id); el.classList.toggle("sel", on); $(".pick", el).setAttribute("aria-pressed", on); }); $("#clips").classList.toggle("picking", sel.size > 0); bulk(); }
   function bulk() {
     const b = $("#bulk"); b.hidden = !sel.size; if (!sel.size) return;
-    b.innerHTML = `<b>${plural(sel.size, "clip", "clips")}</b><button class="btn sm pri" data-x>${icon("out", 15)}Exportar</button><button class="btn sm gh" data-all>Seleccionar todos</button><button class="btn sm gh bad" data-del>${icon("trash", 15)}Quitar</button><button class="btn sm gh sq" data-none aria-label="Quitar la selección">${icon("close", 16)}</button>`;
+    b.innerHTML = `<b>${plural(sel.size, "clip", "clips")}</b><button class="btn sm pri" data-x>${icon("out", 15)}Exportar</button><button class="btn sm" data-yt>${icon("upload", 15)}YouTube</button><button class="btn sm gh" data-all>Seleccionar todos</button><button class="btn sm gh bad" data-del>${icon("trash", 15)}Quitar</button><button class="btn sm gh sq" data-none aria-label="Quitar la selección">${icon("close", 16)}</button>`;
     const ids = () => numbered().filter(c => sel.has(c.id)).map(c => c.id);
     $("[data-x]", b).onclick = (e) => menu(e.currentTarget, [{ head: `Exportar ${plural(sel.size, "clip", "clips")}` }, ...QUALS.map(([k, h]) => ({ label: k === "mp3" ? "MP3" : k, hint: h, icon: "out", run: async () => { const l = ids(); for (const id of l) await exportClip(pid, id, k); toast(`${plural(l.length, "clip", "clips")} en la cola de exportación`); sel.clear(); sig = ""; draw(); jobTick(); } }))]);
+    $("[data-yt]", b).onclick = guard(async () => { const l = numbered().filter(c => sel.has(c.id)); if (await ytPublish(pid, l)) { sel.clear(); sig = ""; draw(); } });
     $("[data-all]", b).onclick = () => { $$(".clip").forEach(el => sel.add(el.dataset.id)); sig = ""; draw(); };
     $("[data-none]", b).onclick = () => { sel.clear(); sig = ""; draw(); };
     $("[data-del]", b).onclick = guard(() => removeClips(ids()));

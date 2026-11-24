@@ -118,10 +118,12 @@ def start(watched):
 
 def busy():
     """Por qué no se puede reiniciar ahora (vacío: se puede)."""
-    from . import local_llm
+    from . import local_llm, youtube
     for j in jobs.list_jobs():
         if j["status"] in ("en cola", "renderizando", "descargando"):
             return "Hay una exportación en marcha." if j["kind"] == "export" else "Hay una descarga en marcha."
+    if youtube.active():
+        return "Hay un video subiéndose a YouTube."
     for p in store.list_all():
         msg = p.get("message") or ""
         if p.get("status") == "procesando" or (p.get("status") == "en cola" and not msg.startswith("Esperando")):

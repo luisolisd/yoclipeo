@@ -38,6 +38,7 @@ En «Automático» usa lo primero que encuentre listo: Claude, otro servidor, Ol
 - **Subtítulos:** karaoke o dinámico, con zooms, emojis y quitar silencios.
 - **Marca:** tus logos o stickers en los clips.
 - **Exportar:** 1080p, 720p, 480p o MP3.
+- **Publicar en YouTube:** ahora, oculto, en privado o programado, uno o varios clips.
 - **Predeterminados** generales y por carpeta.
 
 ## Cómo se usa
@@ -46,10 +47,26 @@ En «Automático» usa lo primero que encuentre listo: Claude, otro servidor, Ol
 3. Abre el proyecto: el mapa muestra dónde está cada clip. Un clic en el mapa reproduce ese momento; arrastra para marcar un tramo y crear un clip a mano.
 4. En el editor cambia el titular, los subtítulos, el encuadre o el corte.
 5. Exporta. Los archivos quedan en `data\projects\<id>\exportados`.
+6. Si conectaste tu canal, publícalo desde **Salida** o selecciona varios clips y prográmalos.
+
+## Publicar en YouTube (opcional)
+YouTube solo acepta subidas de programas registrados en Google. Cada persona registra el suyo: es gratis, se hace una vez y no hay que programar nada. Así nadie comparte claves, y el límite diario de subidas es solo tuyo.
+
+1. Entra a [Google Cloud](https://console.cloud.google.com/projectcreate) con la cuenta de tu canal y crea un proyecto.
+2. Abre [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) y pulsa **Habilitar**.
+3. En [Google Auth Platform](https://console.cloud.google.com/auth/overview) pulsa **Comenzar**: un nombre, tu correo y público **Externo**.
+4. En [Público](https://console.cloud.google.com/auth/audience) pulsa **Publicar app**. Si se queda en pruebas, el permiso caduca a los 7 días.
+5. En [Clientes](https://console.cloud.google.com/auth/clients) crea uno de tipo **App de escritorio** y descarga su JSON en ese momento.
+6. En YoClipeo, **Ajustes → YouTube**, elige ese archivo y pulsa **Conectar con YouTube**. Google avisará que la app no está verificada: es la tuya, entra en «Configuración avanzada» y continúa. Deja marcados los dos permisos.
+
+No compartas ese archivo. La primera publicación va en privado para que revises cómo queda. Cada envío pide confirmación. Para quitar el permiso, pulsa **Desconectar** en Ajustes o entra a [tu cuenta de Google](https://myaccount.google.com/permissions).
+
+Al publicar aplican los [Términos de YouTube](https://www.youtube.com/t/terms) y la [política de privacidad de Google](https://policies.google.com/privacy).
 
 ## Tus datos
 - Todo queda en la carpeta `data`: videos, proyectos, ajustes y claves. **No la compartas ni la subas.**
 - El guion sale de tu PC solo si eliges Claude o un servidor que esté en otro equipo.
+- Un clip sube a YouTube solo si conectas tu canal y lo confirmas. El permiso se guarda cifrado con tu cuenta de Windows y no pasa por ningún otro servidor.
 - El programa escucha únicamente en tu PC (127.0.0.1).
 - Para avisarte de versiones nuevas consulta este repositorio cada 10 minutos. No manda nada tuyo, y se apaga en Ajustes, «Acerca de».
 

@@ -389,6 +389,13 @@ async function editor(pid, cid) {
   const doExport = async (q) => { await flushSave(); await exportClip(pid, cid, q); goTab("t-salida"); toast("En la cola de exportación"); pollJobs(); };
   $$(".quals button").forEach(b => b.onclick = guard(() => doExport(b.dataset.q)));
   $("#eexport").onclick = (e) => menu(e.currentTarget, [{ head: "Exportar este clip" }, ...QUALS.map(([k, h]) => ({ label: k === "mp3" ? "MP3" : k, hint: h, icon: "out", run: () => doExport(k) }))]);
+  $("#eyt").onclick = guard(async () => { await flushSave(); if (await ytPublish(pid, [await api(`/api/projects/${pid}/clips/${cid}`)])) pollPubs(); });
+  let pubSig = "";
+  async function pollPubs() {
+    let ps; try { ps = (await api(`/api/publicaciones?pid=${pid}&cid=${cid}`)).filter(p => !p.hidden); } catch (e) { return; }
+    const box = $("#epubs"), s = ytSig(ps); if (!box || s === pubSig) return; pubSig = s; box.innerHTML = ytRows(ps); ytBind(box, () => { pubSig = ""; pollPubs(); });
+  }
+  timers.push(setInterval(pollPubs, 2000));
   async function renderExports() {
     const c = await api(`/api/projects/${pid}/clips/${cid}`), box = $("#eexports"); if (!box) return;
     const l = [...(c.exports || [])].reverse(); $("#noexp").hidden = l.length > 0;
@@ -416,7 +423,7 @@ async function editor(pid, cid) {
     $(".smode-recuadros").classList.toggle("on", smode === "recuadros"); $(".smode-apilado").classList.toggle("on", smode === "apilado"); on("#e-sswap", E.streamer && E.streamer.swap ? "1" : "0");
     $("#tcolorhint").textContent = ["oscura", "contorno"].includes(E.title_style) ? "de la letra" : "de la caja"; $("#dynhint").hidden = E.style !== "dinamico";
   }
-  syncUI(); renderWords(); renderEmojis(); renderExports(); pollJobs(); if (E.layout === "split") loadOthers();
+  syncUI(); renderWords(); renderEmojis(); renderExports(); pollJobs(); pollPubs(); if (E.layout === "split") loadOthers();
   const tab = pref.get("seccion", "t-titulo"); goTab(document.getElementById(tab) ? tab : "t-titulo");
   loadAround();
   await refreshPlan();
