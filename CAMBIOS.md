@@ -2,6 +2,9 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.3.2
+- Versión de prueba del botón «Actualizar». No cambia nada más.
+
 ## 1.3.1
 - Si se cierra a medio análisis y la voz ya estaba transcrita, al volver a abrir no se transcribe otra vez.
 
