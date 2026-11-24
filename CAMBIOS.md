@@ -2,6 +2,9 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.3.1
+- Si se cierra a medio análisis y la voz ya estaba transcrita, al volver a abrir no se transcribe otra vez.
+
 ## 1.3.0
 - Publica clips en tu canal de YouTube: título, descripción, hashtags, quién puede verlo y a qué hora sale.
 - Programa varios clips de una vez, uno cada tantas horas.

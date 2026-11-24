@@ -2,6 +2,7 @@
 import gc
 import hashlib
 import json
+import os
 import queue
 import re
 import shutil
@@ -85,7 +86,20 @@ def _stage(pid, name, frac=0.0, msg=None):
             return
 
 
-def process_project(pid, only_select=False):
+def _kept_voice(d):
+    """La transcripción que alcanzó a terminar antes de un cierre (None si no hay o ya no corresponde).
+    El audio se saca antes de transcribir: si es más nuevo, esa transcripción es de un análisis anterior."""
+    t, a = d / "transcript.json", d / "audio.wav"
+    try:
+        if a.exists() and t.stat().st_mtime < a.stat().st_mtime:
+            return None
+        tr = json.loads(t.read_text(encoding="utf-8"))
+        return tr if isinstance(tr.get("segments"), list) and "language" in tr else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def process_project(pid, only_select=False, resume=False):
     d = store.pdir(pid)
     p = store.load(pid)
     opts = p.get("options", {})
@@ -94,6 +108,8 @@ def process_project(pid, only_select=False):
         _ensure_proxy(pid)
         return
     try:
+        if not resume and (d / "audio.wav").exists():
+            os.utime(d / "audio.wav")      # análisis nuevo: la transcripción de antes deja de valer
         if p["source"].get("url") and not p["source"].get("file"):
             _stage(pid, "descargando", 0, "Descargando el video…")
             path, title = _fetch(pid, p, d)
@@ -107,16 +123,23 @@ def process_project(pid, only_select=False):
         _stage(pid, "preparando", 0, "Creando copia para la vista previa…")
         if not media.proxy_ready(src, d / "proxy.mp4", info):     # si se cortó después, no se repite
             media.make_proxy(src, d / "proxy.mp4", lambda f: _stage(pid, "preparando", f * 0.85), info["duration"])
-        if info["has_audio"]:
-            media.extract_audio(src, d / "audio.wav")
-        _stage(pid, "transcribiendo", 0, "Buscando en qué partes hablan…")
-        if info["has_audio"]:
+        tr = _kept_voice(d) if resume else None
+        if tr:
+            _stage(pid, "transcribiendo", 1, "La voz ya estaba transcrita…")
+        else:
+            if info["has_audio"]:
+                media.extract_audio(src, d / "audio.wav")
+            _stage(pid, "transcribiendo", 0, "Buscando en qué partes hablan…")
+        if tr:
+            pass
+        elif info["has_audio"]:
             tr = transcribe.transcribe(d / "audio.wav", opts.get("language"), info["duration"],
                                        lambda f: _stage(pid, "transcribiendo", f, f"Transcribiendo… {f * 100:.0f}%"))
         else:
             tr = {"language": "", "device": "", "model": "", "segments": []}
         transcribe.release()
-        (d / "transcript.json").write_text(json.dumps(tr, ensure_ascii=False), encoding="utf-8")
+        if not (resume and _kept_voice(d) == tr):
+            (d / "transcript.json").write_text(json.dumps(tr, ensure_ascii=False), encoding="utf-8")
         _stage(pid, "analizando imagen", 0, "Buscando caras y cortes de plano…")
         pinfo = media.probe(d / "proxy.mp4")
         vision.analyze(d / "proxy.mp4", pinfo["width"], pinfo["height"], info["duration"], d / "vision.json",
@@ -315,7 +338,7 @@ def run_download(j):
 _fetch_q = queue.Queue()
 
 
-def enqueue_project(pid, only_select=False):
+def enqueue_project(pid, only_select=False, resume=False):
     p = store.load(pid)
     if p and p["source"].get("url") and not p["source"].get("file"):
         # las descargas largas van en su propia fila para no bloquear otros proyectos
@@ -339,7 +362,7 @@ def enqueue_project(pid, only_select=False):
         if old.get("waiting"):
             only_select = only_select and old["only"]
         n = old["n"] + 1
-        _asked[pid] = {"n": n, "only": only_select, "waiting": True}
+        _asked[pid] = {"n": n, "only": only_select, "resume": resume, "waiting": True}
         msg = "Deteniendo la elección anterior para empezar esta…" if _running.get("pid") == pid else "En cola…"
         store.set_status(pid, status="en cola", progress=0, message=msg)
     _analysis_q.put((pid, n))
@@ -417,7 +440,7 @@ def _analysis_worker():
             _running.update(pid=pid, n=n)
         try:
             if store.load(pid):
-                process_project(pid, a["only"])
+                process_project(pid, a["only"], a["resume"])
         except Replaced:
             pass
         except Gone:
@@ -446,7 +469,8 @@ def start():
         if p.get("status") in ("en cola", "procesando"):
             # si ya estaba transcrito, solo repetir la elección (no re-transcribir horas de video)
             d = store.pdir(p["id"])
-            done = (d / "transcript.json").exists() and (d / "vision.json").exists() and p.get("media")
-            enqueue_project(p["id"], only_select=bool(done))
+            t, v = d / "transcript.json", d / "vision.json"
+            done = p.get("media") and v.exists() and _kept_voice(d) and v.stat().st_mtime >= t.stat().st_mtime
+            enqueue_project(p["id"], only_select=bool(done), resume=True)
     threading.Thread(target=directo.run, args=(enqueue_project,), daemon=True, name="directos").start()
     refresh_old_thumbs()

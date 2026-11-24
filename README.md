@@ -74,7 +74,7 @@ Al publicar aplican los [Términos de YouTube](https://www.youtube.com/t/terms) 
 - **«Falta una DLL» al instalar:** instala [Microsoft Visual C++ Redistributable x64](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
 - **Un enlace dejó de bajar:** los sitios cambian seguido. Actualiza con `.venv\Scripts\python.exe -m pip install -U yt-dlp`.
 - **Va lento:** copiar y transcribir usan todo el procesador. Baja en 720p los videos de más de una hora. En Ajustes se ve qué pasó la prueba en tu equipo.
-- **Se cerró a medio análisis:** al abrirlo continúa solo. La copia de vista previa ya hecha no se repite; la transcripción sí.
+- **Se cerró a medio análisis:** al abrirlo continúa solo. La copia de vista previa ya hecha no se repite. La transcripción tampoco, si ya había terminado.
 - **La PC se suspende:** en esperas y videos largos debe quedar encendida y sin suspenderse.
 
 ## Actualizar
