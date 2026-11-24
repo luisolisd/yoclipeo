@@ -86,7 +86,7 @@
 
 <!-- ===================== PROYECTO ===================== -->
 <template id="tpl-project">
-  <div class="page">
+  <div class="pwrap"><div class="page">
     <a href="#/" class="back" style="margin-left:-4px"><span data-ic="left" data-s="16"></span>Biblioteca</a>
     <div class="phead" style="margin-top:4px">
       <div class="grow"><h1 class="pname" id="pname" contenteditable="plaintext-only" spellcheck="false" role="textbox" aria-label="Nombre del proyecto"></h1><div class="mut small" id="pmeta" style="margin-top:4px"></div></div>
@@ -104,7 +104,7 @@
     </div>
     <div id="clips" class="clips"></div>
     <div class="bulk" id="bulk" hidden></div>
-  </div>
+  </div><aside class="mon" id="mon" aria-label="Vista del momento elegido" hidden></aside></div>
   <dialog id="redo" class="dlg" style="width:min(600px, calc(100vw - 32px))"><div class="in">
     <h2 id="redo-title"></h2><p class="mut" id="redo-hint"></p><p class="mut small" id="redo-def" style="margin:8px 0 16px"></p>
     <div class="frames" id="r-mode"><button data-v="auto" data-frame="auto">Sigue a quien habla</button><button data-v="streamer" data-frame="streamer">Cámara y juego</button><button data-v="apilado" data-frame="apilado">Vertical y horizontal</button><button data-v="full" data-frame="full">Entero con fondo</button></div>
@@ -261,6 +261,7 @@
 <script src="ui.js"></script>
 <script src="render.js"></script>
 <script src="timeline.js"></script>
+<script src="monitor.js"></script>
 <script src="library.js"></script>
 <script src="project.js"></script>
 <script src="editor.js"></script>

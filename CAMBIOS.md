@@ -2,6 +2,10 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.2.3
+- Clic en el mapa del proyecto: reproduce ese momento a la derecha, con audio. Al arrastrar, reproduce solo el tramo marcado.
+- Mientras lo ves, «Empieza aquí» y «Termina aquí» ajustan el tramo (teclas I y O) y «Crear clip» lo hace clip.
+
 ## 1.2.2
 - Botón «Actualizar», arriba del de claro u oscuro: aparece solo cuando hay una versión nueva, dice qué cambió y la instala con un clic.
 - Si la versión nueva no abre, vuelve sola a la anterior. Tus videos, proyectos y ajustes no se tocan.

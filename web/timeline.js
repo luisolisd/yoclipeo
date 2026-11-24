@@ -55,7 +55,7 @@ class Peek {
 
 // ------------------------------------------------------------ mapa del video
 class VideoMap {
-  // cb: { open(clip), create(a, b), hover(clipId|null) }
+  // cb: { open(clip), create(a, b), hover(clipId|null), play(t, until|null), selected([a, b]|null) }
   constructor(box, pid, duration, cb) {
     this.box = box; this.pid = pid; this.dur = duration; this.cb = cb; this.va = 0; this.vb = duration;
     this.peaks = []; this.clips = []; this.sel = null; this.peek = new Peek(pid);
@@ -71,7 +71,12 @@ class VideoMap {
       const t = at(e); hov.style.left = this.x(t) + "%"; hov.firstChild.textContent = fmt(t); this.peek.show(t, e.clientX, wrap);
       if (down && Math.abs(e.clientX - down.x) > 4) this.select(Math.min(down.t, t), Math.max(down.t, t));
     };
-    wrap.onpointerup = (e) => { if (down && Math.abs(e.clientX - down.x) <= 4) this.select(); down = null; };
+    // clic: ver ese momento (si cae dentro del tramo marcado, el tramo se queda). Al soltar un arrastre: ver el tramo
+    wrap.onpointerup = (e) => {
+      if (!down) return; const s = this.sel, d = down; down = null;
+      if (Math.abs(e.clientX - d.x) > 4) { if (s && s[1] - s[0] >= 1) cb.play(s[0], s[1]); return; }
+      const inside = s && d.t >= s[0] && d.t <= s[1]; if (!inside) this.select(); cb.play(d.t, inside ? s[1] : null);
+    };
     wrap.onpointerleave = wrap.onpointercancel = () => { this.peek.hide(); if (hov) { hov.remove(); hov = null; } };
     wrap.onwheel = (e) => {
       if (!e.deltaY || e.shiftKey) return; e.preventDefault();
@@ -82,22 +87,29 @@ class VideoMap {
     $("[data-mk]", box).onclick = () => { const s = this.sel; this.select(); cb.create(s[0], s[1]); };
     $("[data-zoomsel]", box).onclick = () => { const s = this.sel; this.select(); this.setView(s[0], s[1]); };
     $("[data-all]", box).onclick = () => { this.select(); this.setView(0, this.dur); };
-    this.ro = new ResizeObserver(() => this.draw()); this.ro.observe(wrap);
+    this.ro = new ResizeObserver(() => { this.draw(); const w = wrap.clientWidth; if (w !== this.w0) { this.w0 = w; this.pins(); } }); this.ro.observe(wrap);
     this.onTheme = () => this.draw(); window.addEventListener("tema", this.onTheme);
     this.load(); this.hint();
   }
   destroy() { this.ro.disconnect(); window.removeEventListener("tema", this.onTheme); window.removeEventListener("scroll", this.onScroll, true); this.peek.destroy(); this.hideTip(); clearTimeout(this.lt); }
   x(t) { return (t - this.va) / (this.vb - this.va) * 100; }
-  hint() { $("[data-hint]", this.box).textContent = this.dur > 180 ? "Arrastra para marcar un tramo. Rueda para acercar." : "Arrastra para marcar un tramo y hacer un clip con él."; }
+  hint() { $("[data-hint]", this.box).textContent = this.dur > 180 ? "Clic para ver ese momento. Arrastra para marcar un tramo. Rueda para acercar." : "Clic para ver ese momento. Arrastra para marcar un tramo."; }
   setView(a, b) {
     const span = Math.min(this.dur, Math.max(5, b - a)); a = Math.min(Math.max(0, a), this.dur - span);
     this.va = a; this.vb = a + span; $("[data-all]", this.box).hidden = span >= this.dur - 0.5;
-    this.pins(); this.draw(); if (this.sel) this.select(...this.sel);
+    this.pins(); this.draw(); if (this.sel) this.select(...this.sel); this.head(this.now);
     clearTimeout(this.lt); this.lt = setTimeout(() => this.load(), 160);
   }
   async load() {
     const a = this.va, b = this.vb;
     try { const r = await api(`/api/projects/${this.pid}/wave?a=${a.toFixed(2)}&b=${b.toFixed(2)}&n=720`); if (a === this.va && b === this.vb) { this.peaks = r.peaks; this.pa = a; this.pb = b; this.draw(); } } catch (e) {}
+  }
+  // por dónde va la reproducción
+  head(t) {
+    this.now = t; let el = $(".now", this.wrap); const x = t === undefined || t === null ? -1 : this.x(t);
+    if (x < 0 || x > 100) { el && el.remove(); return; }
+    if (!el) { el = document.createElement("div"); el.className = "now"; this.wrap.appendChild(el); }
+    el.style.left = x + "%";
   }
   select(a, b) {
     let el = $(".sel", this.wrap); const ok = a !== undefined; this.sel = ok ? [a, b] : null;
@@ -106,6 +118,7 @@ class VideoMap {
       if (!el) { el = document.createElement("div"); el.className = "sel"; this.wrap.appendChild(el); }
       el.style.left = Math.max(0, this.x(a)) + "%"; el.style.right = Math.max(0, 100 - this.x(b)) + "%";
     }
+    this.cb.selected(this.sel);
     const len = ok ? b - a : 0;
     $("[data-seltxt]", this.box).textContent = ok ? `${fmt(a)} a ${fmt(b)} (${fmtLong(len)})` : "";
     $("[data-mk]", this.box).hidden = !(ok && len >= 1 && len <= 180); $("[data-zoomsel]", this.box).hidden = !(ok && len > 5);

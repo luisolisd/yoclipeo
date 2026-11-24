@@ -7,11 +7,16 @@ const potBars = (s) => `<span class="pot" title="Potencial según la IA: ${s} de
 
 function project(pid) {
   mount("tpl-project");
-  let P = null, sig = "", map = null, cat = "", sel = new Set(), jobs = {}, jobSig = "", foldersOk = false;
+  let P = null, sig = "", map = null, cat = "", sel = new Set(), jobs = {}, jobSig = "", foldersOk = false, mon = null;
   const sort = choice($("#sort"), (v) => { pref.set("orden", v); sig = ""; draw(); }); sort.value = pref.get("orden", "video");
   const look = choice($("#look"), (v) => { pref.set("vista", v); sig = ""; draw(); }); look.value = pref.get("vista", "grid");
   api("/api/folders").then(r => { FOLDERS = r.folders; foldersOk = true; folderBtn(); });
-  cleanup.push(() => map && map.destroy());
+  cleanup.push(() => { map && map.destroy(); mon && mon.destroy(); });
+  const watch = (t, until) => {
+    if (!mon) { mon = new Monitor($("#mon"), pid, P.media.duration, { time: (x) => map.head(x), select: (a, b) => map.select(a, b), create: guard((a, b) => createClip(a, b)), closed: () => map.head(null),
+      opened: () => { if (innerWidth <= 900) view.scrollTop += map.box.getBoundingClientRect().top - $("#mon").offsetHeight - 10; } }); mon.setSel(map.sel); }
+    mon.play(t, until);
+  };
 
   const name = $("#pname");
   name.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); name.blur(); } if (e.key === "Escape") { name.textContent = P.name; name.blur(); } };
@@ -35,7 +40,7 @@ function project(pid) {
     const rs = $("#recstop"); if (rs) { rs.disabled = !!p.source.live.stop; if (rs.disabled) rs.textContent = "Deteniendo…"; rs.onclick = () => stopRec(p); }
     if (!map && p.media && p.status === "listo") map = new VideoMap($("#vmap"), pid, p.media.duration, {
       open: (c) => location.hash = `#/p/${pid}/c/${c.id}`, create: guard((a, b) => createClip(a, b)),
-      hover: (id) => $$(".clip").forEach(el => el.classList.toggle("hot", el.dataset.id === id)) });
+      hover: (id) => $$(".clip").forEach(el => el.classList.toggle("hot", el.dataset.id === id)), play: watch, selected: (s) => mon && mon.setSel(s) });
     $("#vmap").hidden = !map;
   }
   function numbered() { return [...P.clips].sort((a, b) => a.start - b.start).map((c, i) => ({ ...c, no: i + 1 })); }

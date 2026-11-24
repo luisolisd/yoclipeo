@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 
 APP_NAME = "YoClipeo"  # nombre visible: la interfaz y el servidor lo toman de aquí
-VERSION = "1.2.2"       # súbela en cada actualización y anótala en CAMBIOS.md: es lo que hace aparecer el botón «Actualizar»
+VERSION = "1.2.3"       # súbela en cada actualización y anótala en CAMBIOS.md: es lo que hace aparecer el botón «Actualizar»
 REPO, BRANCH = "luisolisd/yoclipeo", "main"     # de dónde salen las versiones nuevas
 AUTHOR = "Desarrollado por luisolisd"
 NOTICE = "Gratis. Prohibida su venta."

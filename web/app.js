@@ -30,7 +30,7 @@ window.addEventListener("hashchange", route);
 // Si la interfaz se actualizó, recargar la página sola. Espera si estás en el editor, con una ventana
 // abierta, escribiendo, con un archivo elegido o subiendo algo, para no perder nada a medias.
 let uiVersion = null;
-const uiBusy = () => location.hash.includes("/c/") || $("dialog[open]") || isTyping() || openMenu || $(".clip.sel") ||
+const uiBusy = () => location.hash.includes("/c/") || $("dialog[open]") || isTyping() || openMenu || $(".clip.sel") || $(".mon:not([hidden])") ||
   $$("input[type=file]").some(f => f.files.length) || $$("input[type=text],input[type=password],textarea").some(i => i.value !== i.defaultValue && i.offsetParent && i.id !== "s-odir");
 async function checkVersion() {
   try { const { v } = await api("/api/version"); if (uiVersion === null) uiVersion = v; else if (v !== uiVersion && !uiBusy()) location.reload(); } catch (e) {}
