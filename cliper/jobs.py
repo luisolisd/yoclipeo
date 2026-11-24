@@ -257,6 +257,23 @@ def schedule_thumb(pid, cid, delay=1.2):
         t.start()
 
 
+_cover_lock = threading.Semaphore(2)
+
+
+def cover(pid, cid, t=0.0, width=1080):
+    """Portada: el fotograma del clip en el segundo t. Devuelve (JPEG, duración del clip)."""
+    p = store.load(pid)
+    if not p or not store.find_clip(p, cid):
+        raise ValueError("Ese clip ya no existe.")
+    if not Path(p["source"]["file"]).exists():
+        raise ValueError("Falta el video original.")
+    with _cover_lock:
+        pl = plan.build(pid, cid)
+        B = pl["sources"].get("B")
+        pB = store.load(B["pid"]) if B else None
+        return render.cover(pl, p["source"]["file"], t, width, pB["source"]["file"] if pB else None), pl["duration"]
+
+
 def make_thumb(pid, cid):
     try:
         p = store.load(pid)

@@ -316,6 +316,29 @@ def _export(plan, src_path, out_path, quality, progress_cb, srcB_path, encoder):
     return out_path
 
 
+def cover(plan, src_path, t, width=OUT_W, srcB_path=None):
+    """El fotograma del clip en el segundo t, tal como queda en el video. Devuelve el JPEG."""
+    from .media import frame_at
+    from .plan import TimeMap
+    t = max(0.0, min(float(t), plan["duration"] - 0.1))
+    ts = TimeMap(plan["segments"]).to_src(t)
+    fw = None if width >= OUT_W else 960
+    fr = frame_at(src_path, ts, width=fw)
+    if fr is None:
+        raise RuntimeError("No se pudo leer el fotograma.")
+    B = plan["sources"].get("B")
+    fb = frame_at(srcB_path, max(0, ts + B["offset"]), width=fw) if B and srcB_path else None
+    canvas = np.zeros((OUT_H, OUT_W, 3), np.uint8)
+    compose(plan, t, {"A": fr, "B": fb}, canvas)
+    return jpeg(canvas, width)
+
+
+def jpeg(img, width=OUT_W):
+    if img.shape[1] != width:
+        img = cv2.resize(img, (width, int(round(img.shape[0] * width / img.shape[1]))), interpolation=cv2.INTER_AREA if width < img.shape[1] else cv2.INTER_LANCZOS4)
+    return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92 if width >= OUT_W else 84])[1].tobytes()
+
+
 def thumbnail(plan, src_path, out_path, width=360):
     """Miniatura vertical del clip: fotograma a 1/3 del clip con su encuadre, título, marca,
     subtítulos y filtro, tal como se verá (el título y la marca se muestran aunque a esa altura

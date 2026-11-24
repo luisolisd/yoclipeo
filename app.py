@@ -285,6 +285,12 @@ def pub_add(request: Request, body: dict):
     return _yt(request, youtube.add, body)
 
 
+@app.post("/api/publicaciones/{i}/portada")
+def pub_cover(request: Request, i: str, body: dict):
+    _yt(request, youtube.set_cover, i, body.get("t"))
+    return {"ok": True}
+
+
 @app.post("/api/publicaciones/{i}/{what}")
 def pub_do(request: Request, i: str, what: str):
     fn = {"reintentar": youtube.retry, "cancelar": youtube.cancel, "quitar": youtube.forget, "lista": youtube.relist}.get(what)
@@ -527,6 +533,18 @@ def thumb(pid: str, cid: str):
     if not f.exists():
         raise HTTPException(404)
     return FileResponse(f, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/projects/{pid}/clips/{cid}/portada")
+def clip_cover(pid: str, cid: str, t: float = 0):
+    """Cómo se ve el clip en el segundo t, en chico, para escoger la portada."""
+    try:
+        jpg, dur = jobs.cover(pid, cid, t if 0 <= t <= 36000 else 0, 360)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except RuntimeError:
+        raise HTTPException(500, "No se pudo leer el fotograma.")
+    return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Duration": str(dur)})
 
 
 @app.get("/api/projects/{pid}/wave")

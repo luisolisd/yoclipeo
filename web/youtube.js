@@ -63,6 +63,42 @@ function ytPanel(el) {
   every(2500, load);
 }
 
+// ------------------------------------------------------------ portada
+// Pinta en `pic` el fotograma del segundo x.cover y deja escoger otro con la barra. Las imágenes se piden de una en una.
+let coverLine = Promise.resolve();
+const coverName = (t) => t ? `Segundo ${t.toFixed(1)}` : "Primer fotograma";
+const coverBar = (x) => `<label class="fld"><span class="lb"><span>Portada</span><output data-cvn>${coverName(x.cover)}</output></span><input type="range" data-cv min="0" max="${Math.max(.1, x.dur).toFixed(1)}" step="0.1" value="${x.cover}" aria-label="Momento de la portada"></label>`;
+function coverPick(box, pic, x, pid, cid, fail) {
+  const r = $("[data-cv]", box), out = $("[data-cvn]", box); let want = 0, t;
+  const show = () => {
+    const me = ++want; pic.classList.add("wait");
+    coverLine = coverLine.then(async () => {
+      if (me !== want || !pic.isConnected) return;
+      try {
+        const q = await fetch(`/api/projects/${pid}/clips/${cid}/portada?t=${x.cover}`); if (!q.ok) throw new Error(((await q.json().catch(() => ({}))).detail) || "No se pudo leer el fotograma.");
+        const dur = +q.headers.get("X-Duration"), u = URL.createObjectURL(await q.blob());
+        if (dur > 0 && r) { r.max = Math.max(.1, dur - .1).toFixed(1); if (x.cover > +r.max) { x.cover = +r.max; out.textContent = coverName(x.cover); } }
+        if (me === want && pic.isConnected) { if (x.url) URL.revokeObjectURL(x.url); x.url = u; pic.style.backgroundImage = `url('${u}')`; } else URL.revokeObjectURL(u);
+      } catch (e) { if (me === want && fail) fail(e.message); }
+      if (me === want) pic.classList.remove("wait");
+    });
+  };
+  if (r) r.oninput = () => { x.cover = +r.value; out.textContent = coverName(x.cover); clearTimeout(t); t = setTimeout(show, 180); };
+  if (x.url) pic.style.backgroundImage = `url('${x.url}')`; else show();
+}
+
+async function ytCover(p) {                    // poner o cambiar la portada de un video ya subido
+  const pr = await api(`/api/projects/${p.pid}`), c = (pr.clips || []).find(y => y.id === p.cid); if (!c) throw new Error("Ese clip ya no existe en el proyecto.");
+  const x = { cover: p.cover || 0, dur: c.end - c.start }, d = document.createElement("dialog"); d.className = "dlg cvd";
+  d.innerHTML = `<div class="in"><h2>Portada en YouTube</h2><div class="cvbox"><i class="cvp" role="img" aria-label="Portada"></i><div><p class="mut small">${esc(p.title)}</p>${coverBar(x)}<p class="mut small">Se toma del clip como está ahora. Puede tardar un rato en verse en YouTube.</p><div class="err" role="alert"></div></div></div></div><div class="acts"><button type="button" class="btn gh" data-no>Cancelar</button><button type="button" class="btn pri" data-yes>Poner portada</button></div>`;
+  return new Promise(res => {
+    let ok = false; const err = $(".err", d);
+    d.onclose = () => { if (x.url) URL.revokeObjectURL(x.url); d.remove(); res(ok); }; $("[data-no]", d).onclick = () => d.close();
+    $("[data-yes]", d).onclick = async (e) => { const b = e.currentTarget; b.disabled = true; err.textContent = ""; try { await api(`/api/publicaciones/${p.id}/portada`, { method: "POST", json: { t: x.cover } }); ok = true; d.close(); toast("La portada va en camino"); } catch (e2) { err.textContent = e2.message; b.disabled = false; } };
+    document.body.appendChild(d); d.showModal(); coverPick(d, $(".cvp", d), x, p.pid, p.cid, m => err.textContent = m);
+  });
+}
+
 // ------------------------------------------------------------ publicar uno o varios clips
 const toLocal = (d) => new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
@@ -75,7 +111,7 @@ async function ytPublish(pid, clips) {
   if (clips.length > 50) throw new Error("Elige hasta 50 clips a la vez.");
   const before = (c) => mine.find(p => p.cid === c.id && (p.video || YT_ON.includes(p.status)));
   clips = [...clips].sort((a, b) => a.start - b.start);      // en lote, en el orden del video
-  let list = clips.map(c => ({ c, title: (c.title || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 100), desc: (c.description || "").replace(/[<>]/g, ""), tags: (c.hashtags || []).map(t => t.startsWith("#") ? t : "#" + t).join(" "), old: before(c) }));
+  let list = clips.map(c => ({ c, title: (c.title || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 100), desc: (c.description || "").replace(/[<>]/g, ""), tags: (c.hashtags || []).map(t => t.startsWith("#") ? t : "#" + t).join(" "), old: before(c), cover: 0, dur: c.end - c.start }));
   const start = new Date(Date.now() + 3600e3); start.setMinutes(0, 0, 0); start.setHours(start.getHours() + 1);
   const d = document.createElement("dialog"); d.className = "sheet pub";
   d.innerHTML = `<header><h2>Publicar en YouTube</h2><button type="button" class="btn gh sq" data-x aria-label="Cerrar">${icon("close", 18)}</button></header>
@@ -83,6 +119,7 @@ async function ytPublish(pid, clips) {
       ${yt.first ? `<p class="pubnote">Es tu primera publicación. Sugerencia: sube un clip en privado y revisa cómo queda.</p>` : ""}
       ${clips.length > 1 ? `<p class="mut small">Se suben en el orden del video, del primero al último.</p>` : ""}
       <div data-list></div>
+      <label class="chk"><input type="checkbox" data-cov> <span>Poner esta portada en YouTube</span></label><p class="mut small" style="margin:0 0 18px" data-covx></p>
       <div data-favs></div>
       <h3>Quién puede verlo</h3><div class="seg" data-see data-value="private"><button data-v="private">Privado</button><button data-v="unlisted">Oculto</button><button data-v="public">Público</button><button data-v="plan">Programado</button></div>
       <div data-plan hidden style="margin-top:14px"><div class="two"><label class="fld"><span class="lb" data-wl>Fecha y hora</span><input type="datetime-local" data-when></label><label class="fld" data-gapf><span class="lb">Uno cada (horas)</span><input type="number" data-gap min="1" max="336" step="1" value="24"></label></div></div>
@@ -149,18 +186,21 @@ async function ytPublish(pid, clips) {
     $$("[data-at]", d).forEach(e => { const t = plan && many && at(+e.dataset.at); e.hidden = !t; e.textContent = t ? `Sale ${ytDate(t)}` : ""; });
   }
   function cards() {
-    $("[data-list]", d).innerHTML = list.map((x, i) => `<div class="pubc" data-i="${i}"><i style="background-image:url('/api/projects/${pid}/thumb/${x.c.id}?v=${x.c.thumb_v || 0}')"></i><div>
+    $("[data-list]", d).innerHTML = list.map((x, i) => `<div class="pubc" data-i="${i}"><i class="cvp"></i><div>
         ${list.length > 1 ? `<p class="mut small" style="margin:0 0 4px">${i + 1} de ${list.length}, en ${fmt(x.c.start)} del video</p>` : ""}<label class="fld"><span class="lb"><span>Título</span><output data-n></output></span><input type="text" maxlength="100" data-f="title" value="${esc(x.title)}"></label>
-        ${list.length > 1 ? `<details><summary>Descripción y hashtags</summary>` : ""}<label class="fld"><span class="lb">Descripción</span><textarea rows="${list.length > 1 ? 2 : 3}" maxlength="4500" data-f="desc">${esc(x.desc)}</textarea></label><label class="fld"><span class="lb">Hashtags</span><input type="text" maxlength="400" data-f="tags" value="${esc(x.tags)}"></label>${list.length > 1 ? "</details>" : ""}
+        ${list.length > 1 ? `<details><summary>Portada, descripción y hashtags</summary>` : ""}${coverBar(x)}<label class="fld"><span class="lb">Descripción</span><textarea rows="${list.length > 1 ? 2 : 3}" maxlength="4500" data-f="desc">${esc(x.desc)}</textarea></label><label class="fld"><span class="lb">Hashtags</span><input type="text" maxlength="400" data-f="tags" value="${esc(x.tags)}"></label>${list.length > 1 ? "</details>" : ""}
         ${x.old ? `<p class="small pubold">${x.old.video ? `Ya lo subiste el ${ytDate(x.old.created * 1000)}` : "Ya se está subiendo"}: saldría repetido.</p>` : ""}<p class="small pubat" data-at="${i}" hidden></p></div>
         ${list.length > 1 ? `<button type="button" class="btn gh sq sm" data-rm aria-label="Quitar de la lista">${icon("close", 14)}</button>` : ""}</div>`).join("");
     $$(".pubc", d).forEach(el => {
       const x = list[+el.dataset.i], n = $("[data-n]", el), cnt = () => n.textContent = `${x.title.length}/100`; cnt();
       $$("[data-f]", el).forEach(f => f.oninput = () => { x[f.dataset.f] = f.value; cnt(); err.textContent = ""; if (f.dataset.f === "tags") paintFavs(); });
+      coverPick(el, $(".cvp", el), x, pid, x.c.id);
       const rm = $("[data-rm]", el); if (rm) rm.onclick = () => { list = list.filter(y => y !== x); cards(); };
     });
     paintFavs(); sync();
   }
+  const cov = $("[data-cov]", d), covs = () => { d.classList.toggle("nocov", !cov.checked); $("[data-covx]", d).innerHTML = cov.checked ? `YouTube la pone al terminar de procesar. Tu cuenta debe estar ${ext("https://www.youtube.com/verify", "verificada")}.` : "YouTube escogerá un fotograma."; };
+  cov.checked = pref.get("yt-portada", "si") === "si"; cov.onchange = covs; covs();
   // hashtags favoritos: un clic los pone (o los quita) en todos los clips de la ventana
   const favs = $("[data-favs]", d), tagsOf = (x) => x.tags.split(/[\s,]+/).filter(Boolean).map(t => "#" + t.replace(/^#+/, "")), low = (t) => t.toLowerCase();
   const has = (x, t) => tagsOf(x).some(y => low(y) === low(t)), all = (t) => list.length > 0 && list.every(x => has(x, t));
@@ -203,9 +243,9 @@ async function ytPublish(pid, clips) {
   }
   api("/api/hashtags").then(r => { F = r; paintFavs(); }).catch(() => {});
   when.oninput = gap.oninput = sync; $("[data-x]", d).onclick = () => d.close();
-  let sent = false, over;
+  let sent = false, over; const seenC = new Map(list.map(x => [x.c.id, x]));
   const done = new Promise(r => over = r);
-  d.onclose = () => { d.remove(); over(sent); };
+  d.onclose = () => { clips.forEach(c => { const x = seenC.get(c.id); if (x && x.url) URL.revokeObjectURL(x.url); }); d.remove(); over(sent); };
   $("[data-go]", d).onclick = async (e) => {
     const btn = e.currentTarget; err.textContent = "";
     try {
@@ -217,10 +257,10 @@ async function ytPublish(pid, clips) {
       const how = plan ? (one ? `Se publicará el ${ytDate(at(0))}.` : `Del ${ytDate(at(0))} al ${ytDate(at(list.length - 1))}, uno cada ${gap.value} h.`) : see.value === "public" ? `Cualquiera podrá ${one ? "verlo" : "verlos"}.` : see.value === "unlisted" ? `${one ? "Lo" : "Los"} verá quien tenga el enlace.` : `Solo tú podrás ${one ? "verlo" : "verlos"}.`;
       if (!(await ask({ title: `¿${verb()}?`, text: `${one ? `«${list[0].title.trim()}»` : plural(list.length, "clip", "clips")} en el canal ${yt.channel.title}. ${how}${one ? "" : " En el orden del video."}${picked.id ? ` ${one ? "Se agrega" : "Se agregan"} a la lista «${picked.title}».` : ""}${rep ? ` ${rep === 1 ? "Uno ya se había subido: saldrá" : `${rep} ya se habían subido: saldrán`} ${rep === 1 ? "repetido" : "repetidos"}.` : ""}`, ok: verb() }))) return;
       btn.disabled = true;
-      const items = list.map((x, i) => { const h = x.tags.trim().split(/[\s,]+/).filter(Boolean).map(t => t.startsWith("#") ? t : "#" + t); return { pid, cid: x.c.id, title: x.title.trim(), description: [x.desc.trim(), h.join(" ")].filter(Boolean).join("\n\n"), tags: h.map(t => t.slice(1)), privacy: plan ? "private" : see.value, publish_at: plan ? at(i).toISOString() : "", again: !!x.old }; });
+      const items = list.map((x, i) => { const h = x.tags.trim().split(/[\s,]+/).filter(Boolean).map(t => t.startsWith("#") ? t : "#" + t); return { pid, cid: x.c.id, title: x.title.trim(), description: [x.desc.trim(), h.join(" ")].filter(Boolean).join("\n\n"), tags: h.map(t => t.slice(1)), privacy: plan ? "private" : see.value, publish_at: plan ? at(i).toISOString() : "", again: !!x.old, cover: cov.checked ? x.cover : null }; });
       await api("/api/publicaciones", { method: "POST", json: { channel: yt.channel.id, kids: kids.value === "si", synthetic: $("[data-syn]", d).checked, notify: $("[data-not]", d).checked, category: $("[data-cat]", d).value, playlist: picked.id, items } });
       if ($("[data-pl]", d)) pref.set(prefList, picked.id);
-      if (!yt.first) pref.set("yt-ve", see.value); pref.set("yt-horas", gap.value); pref.set("yt-cat", $("[data-cat]", d).value);
+      if (!yt.first) pref.set("yt-ve", see.value); pref.set("yt-portada", cov.checked ? "si" : "no"); pref.set("yt-horas", gap.value); pref.set("yt-cat", $("[data-cat]", d).value);
       sent = true; d.close(); toast(one ? "En la cola para YouTube" : `${list.length} clips en la cola para YouTube`);
     } catch (e2) { err.textContent = e2.message; btn.disabled = false; }
   };
@@ -239,15 +279,20 @@ function ytState(p) {
   if (p.publish_at) return new Date(p.publish_at) > new Date() ? `Programado para el ${ytDate(p.publish_at)}` : `Publicado el ${ytDate(p.publish_at)}`;
   return p.note ? p.note : p.privacy === "public" ? "Publicado" : p.privacy === "unlisted" ? "Subido como oculto" : "Subido en privado";
 }
-const ytSig = (ps) => JSON.stringify(ps.map(p => [p.id, p.status, p.progress, p.error, p.hidden, p.listed]));
+const ytSig = (ps) => JSON.stringify(ps.map(p => [p.id, p.status, p.progress, p.error, p.hidden, p.listed, p.cover_state, p.cover_error]));
 function ytRows(ps) {
   return ps.map(p => {
     const on = YT_ON.includes(p.status), pub = p.video && !p.publish_at && p.privacy !== "private" && !p.note;
-    return `<div class="file ytf" data-pub="${p.id}"><i style="background-image:url('/api/projects/${p.pid}/thumb/${p.cid}')"></i><span class="n"${p.error ? ` style="white-space:normal"` : ""}><span title="${esc(p.title)}">${esc(p.title)}</span><small>${esc(ytState(p))}${p.channel ? ` · ${esc(p.channel.title)}` : ""}${p.playlist && p.playlist.id ? ` · ${p.listed === "si" ? "En la lista" : p.listed === "pendiente" ? "Agregando a la lista" : "Lista"} «${esc(p.playlist.title)}»` : ""}</small>${p.listed === "no" ? `<span class="err">No entró a la lista: ${esc(p.list_error || "")}</span>` : ""}${p.error ? `<span class="err">${esc(p.error)}</span>` : ""}${on ? `<div class="line" style="margin-top:6px"><i style="width:${p.progress}%"></i></div>` : ""}</span>
-      ${p.video ? `<a class="btn sm" href="${pub ? `https://youtu.be/${encodeURIComponent(p.video)}` : `https://studio.youtube.com/video/${encodeURIComponent(p.video)}/edit`}" target="_blank" rel="noopener noreferrer">${pub ? "Ver" : "Abrir en Studio"}</a>` : ""}${p.listed === "no" ? `<button class="btn sm" data-do="lista">Reintentar la lista</button>` : ""}${!p.video && ["error", "cancelada"].includes(p.status) ? `<button class="btn sm" data-do="reintentar">Reintentar</button>` : ""}${on ? `<button class="btn sm gh" data-do="cancelar">${p.stop ? "Cancelando…" : "Cancelar"}</button>` : `<button class="btn sm gh sq" data-do="quitar" aria-label="Quitar de la lista" title="Quitar de la lista">${icon("close", 14)}</button>`}</div>`;
+    const cvOk = p.video && ["procesando", "lista"].includes(p.status);
+    return `<div class="file ytf" data-pub="${p.id}"><i style="background-image:url('/api/projects/${p.pid}/thumb/${p.cid}')"></i><span class="n"${p.error ? ` style="white-space:normal"` : ""}><span title="${esc(p.title)}">${esc(p.title)}</span><small>${esc(ytState(p))}${p.channel ? ` · ${esc(p.channel.title)}` : ""}${p.playlist && p.playlist.id ? ` · ${p.listed === "si" ? "En la lista" : p.listed === "pendiente" ? "Agregando a la lista" : "Lista"} «${esc(p.playlist.title)}»` : ""}${cvOk ? { si: " · Portada puesta", pendiente: " · Portada en camino" }[p.cover_state] || "" : ""}</small>${cvOk && p.cover_error ? `<span class="${p.cover_state === "no" ? "err" : "mut small"}">${p.cover_state === "no" ? "Portada: " : ""}${esc(p.cover_error)}</span>` : ""}${p.listed === "no" ? `<span class="err">No entró a la lista: ${esc(p.list_error || "")}</span>` : ""}${p.error ? `<span class="err">${esc(p.error)}</span>` : ""}${on ? `<div class="line" style="margin-top:6px"><i style="width:${p.progress}%"></i></div>` : ""}</span>
+      ${cvOk ? `<button class="btn sm gh" data-cover>${p.cover_state === "si" ? "Cambiar portada" : "Poner portada"}</button>` : ""}${p.video ? `<a class="btn sm" href="${pub ? `https://youtu.be/${encodeURIComponent(p.video)}` : `https://studio.youtube.com/video/${encodeURIComponent(p.video)}/edit`}" target="_blank" rel="noopener noreferrer">${pub ? "Ver" : "Abrir en Studio"}</a>` : ""}${p.listed === "no" ? `<button class="btn sm" data-do="lista">Reintentar la lista</button>` : ""}${!p.video && ["error", "cancelada"].includes(p.status) ? `<button class="btn sm" data-do="reintentar">Reintentar</button>` : ""}${on ? `<button class="btn sm gh" data-do="cancelar">${p.stop ? "Cancelando…" : "Cancelar"}</button>` : `<button class="btn sm gh sq" data-do="quitar" aria-label="Quitar de la lista" title="Quitar de la lista">${icon("close", 14)}</button>`}</div>`;
   }).join("");
 }
 function ytBind(box, again) {
+  $$("[data-cover]", box).forEach(b => b.onclick = guard(async () => {
+    const i = b.closest("[data-pub]").dataset.pub, p = (await api("/api/publicaciones")).find(y => y.id === i);
+    if (p && await ytCover(p)) again();
+  }));
   $$("[data-do]", box).forEach(b => b.onclick = guard(async () => {
     const i = b.closest("[data-pub]").dataset.pub;
     if (b.dataset.do === "cancelar" && !(await ask({ title: "¿Cancelar esta subida?", text: "No quedará nada en tu canal.", ok: "Cancelar la subida", danger: true }))) return;

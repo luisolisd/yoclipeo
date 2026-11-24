@@ -23,13 +23,14 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import config, jobs, store
+from . import config, jobs, media, render, store
 
 AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN = "https://oauth2.googleapis.com/token"
 REVOKE = "https://oauth2.googleapis.com/revoke"
 API = "https://www.googleapis.com/youtube/v3"
 UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos"
+THUMB = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload",      # subir
           "https://www.googleapis.com/auth/youtube.readonly"]    # decir en qué canal y cómo quedó cada video
 MANAGE = "https://www.googleapis.com/auth/youtube"                # opcional, para las listas: administrar la cuenta (incluye los otros dos)
@@ -88,6 +89,8 @@ def unseal(s):
 
 
 _lock = threading.RLock()
+_cover_busy = threading.RLock()
+_look = threading.Event()
 _mem = {"token": "", "until": 0.0}
 _pending = {}
 
@@ -418,6 +421,15 @@ def set_hashtags(tags):
     return hashtags()
 
 
+def _moment(t):
+    """El segundo del clip que será la portada. None: la escoge YouTube."""
+    if t is None:
+        return None
+    if isinstance(t, bool) or not isinstance(t, (int, float)) or not 0 <= t <= 36000:
+        raise ValueError("Revisa la portada.")
+    return round(float(t), 2)
+
+
 def _when(s):
     if not s:
         return ""
@@ -475,7 +487,7 @@ def add(body):
             raise ValueError("Un video programado se sube en privado hasta su hora.")
         if not it.get("again") and any(x["pid"] == p["id"] and x["cid"] == c["id"] and (x.get("video") or x["status"] in ACTIVE) for x in old + new):
             raise ValueError("Ese clip ya se subió o se está subiendo" + tag + ".")
-        new.append({"id": store.new_id(10), "pid": p["id"], "cid": c["id"], "channel": st["channel"], "title": title, "description": desc, "tags": _tags(it.get("tags")),
+        new.append({"id": store.new_id(10), "cover": _moment(it.get("cover")), "pid": p["id"], "cid": c["id"], "channel": st["channel"], "title": title, "description": desc, "tags": _tags(it.get("tags")),
                     "privacy": privacy, "publish_at": when, "kids": body["kids"], "category": cat, "notify": body.get("notify") is not False,
                     "synthetic": body.get("synthetic") is True, "playlist": pl, "listed": "", "at": float(c.get("start") or 0), "status": "en cola", "progress": 0, "created": time.time(), "video": "", "error": "", "session": "", "sent": 0})
     # en lote van siempre en el orden del video, para que en el canal y en la lista queden igual
@@ -693,7 +705,10 @@ def _run(i):
         v = _upload(_one(i), f)
         got = (v.get("status") or {}).get("privacyStatus", "")
         note = "YouTube lo dejó en privado." if got == "private" and p["privacy"] != "private" else ""
-        _set(i, status="procesando", progress=100, video=str(v["id"]), session="", error="", note=note, done=time.time(), listed="pendiente" if p.get("playlist") else "")
+        _set(i, status="procesando", progress=100, video=str(v["id"]), session="", error="", note=note, done=time.time(), listed="pendiente" if p.get("playlist") else "",
+             cover_state="" if p.get("cover") is None else "pendiente", cover_error="")
+        if p.get("cover") is not None:
+            _quiet(lambda: _grab(i, f, p["cover"]))          # la portada sale del mismo archivo que se subió
         _quiet(f.unlink)                 # si no se puede ahora, se borra al volver a abrir
         _to_list(i)
     except Stopped:
@@ -745,6 +760,94 @@ def _to_list(i):
     _set(i, listed="no", list_error=err[:300])
 
 
+# ------------------------------------------------------------ portada
+
+def _grab(i, f, t):
+    dur = media.probe(f)["duration"]
+    img = media.frame_at(f, max(0, min(t, dur - 0.1)))
+    (TMP / f"{i}.jpg").write_bytes(render.jpeg(img))
+
+
+def set_cover(i, t):
+    """Pone o cambia la portada de un video que ya se subió."""
+    p = _one(i)
+    if not p or not p.get("video") or p["status"] not in ("procesando", "lista"):
+        raise ValueError("Ese video no está en YouTube.")
+    t = _moment(t)
+    if t is None:
+        raise ValueError("Elige la portada.")
+    if (_read().get("channel") or {}).get("id") != p["channel"]["id"]:
+        raise ValueError("El canal conectado ya no es el mismo.")
+    jpg = jobs.cover(p["pid"], p["cid"], t)[0]
+    with _cover_busy:
+        TMP.mkdir(parents=True, exist_ok=True)
+        (TMP / f"{i}.jpg").write_bytes(jpg)
+        _set(i, cover=t, cover_state="pendiente", cover_error="", cover_tries=0, cover_next=0)
+    _look.set()
+
+
+def _send_cover(video, jpg):
+    for again in (False, True):
+        try:
+            _call(f"{THUMB}?{urllib.parse.urlencode({'videoId': video, 'uploadType': 'media'})}", "POST", {"Authorization": f"Bearer {token(again)}", "Content-Type": "image/jpeg"}, jpg, 120)
+            return
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and not again:
+                continue
+            raise _fail(e)
+        except NET:
+            raise YTError("No hay conexión con YouTube.", reason="net")
+
+
+def _processed(video):
+    """YouTube pide esperar a que termine de procesar: si no, la portada de un Short puede no aplicarse."""
+    r = _api("videos", part="processingDetails", id=video).get("items", [])
+    if not r:
+        raise YTError("El video ya no está en YouTube.", reason="videoNotFound")
+    return (r[0].get("processingDetails") or {}).get("processingStatus", "succeeded") != "processing"
+
+
+def check_covers():
+    """Manda las portadas de los videos que YouTube ya procesó."""
+    with _cover_busy:
+        for p in pubs():
+            if p.get("cover_state") != "pendiente" or p["status"] != "lista" or time.time() < p.get("cover_next", 0):
+                continue
+            i, jpg = p["id"], TMP / f"{p['id']}.jpg"
+            try:
+                if (_read().get("channel") or {}).get("id") != p["channel"]["id"]:
+                    raise YTError("El canal conectado ya no es el mismo.")
+                if not _processed(p["video"]):
+                    _set(i, cover_next=time.time() + 60)
+                    continue
+                data = jpg.read_bytes() if jpg.exists() else jobs.cover(p["pid"], p["cid"], p["cover"])[0]
+                _send_cover(p["video"], data)
+                _set(i, cover_state="si", cover_error="", cover_tries=0)
+                _quiet(jpg.unlink)
+            except YTError as e:
+                n, msg = p.get("cover_tries", 0) + 1, COVER.get(e.reason, str(e))
+                slow = {"uploadRateLimitExceeded": 3600, "quotaExceeded": 7200}.get(e.reason, 0)
+                if slow or e.reason in ("net", "rateLimitExceeded", "userRateLimitExceeded") or e.code in (409, 500, 502, 503, 504):
+                    if n <= 60:
+                        _set(i, cover_tries=n, cover_error=msg, cover_next=time.time() + (slow or min(3600, 30 * 2 ** min(n, 7))))
+                        if slow:             # el límite es del canal: las demás también esperan
+                            for x in pubs():
+                                if x.get("cover_state") == "pendiente" and x["id"] != i:
+                                    _set(x["id"], cover_next=time.time() + slow)
+                            return
+                        if e.reason == "net":
+                            return
+                        continue
+                _set(i, cover_state="no", cover_error=msg[:300])
+            except Exception as e:
+                traceback.print_exc()
+                _set(i, cover_state="no", cover_error=str(e)[:200])
+
+
+COVER = {"forbidden": "YouTube no dejó ponerla. Verifica tu cuenta en youtube.com/verify y reintenta.", "videoNotFound": "El video ya no está en YouTube.",
+         "invalidImage": "YouTube no aceptó la imagen.", "uploadRateLimitExceeded": "YouTube pidió esperar para poner más portadas. Se reintenta solo."}
+
+
 def relist(i):
     p = _one(i)
     if not p or p.get("listed") != "no" or not p.get("video"):
@@ -785,17 +888,23 @@ def check_processed():
 
 def _checker():
     while True:
-        time.sleep(30)
-        try:
-            check_processed()
-        except Exception:
-            pass
+        _look.wait(30)
+        _look.clear()
+        for fn in (check_processed, check_covers):
+            try:
+                fn()
+            except Exception:
+                pass
 
 
 def start():
     TMP.mkdir(parents=True, exist_ok=True)
     live = {p["id"] for p in pubs() if not p.get("video")}
     for f in TMP.glob("*.mp4"):
+        if f.stem not in live:
+            f.unlink(missing_ok=True)
+    live = {p["id"] for p in pubs() if p.get("cover_state") == "pendiente"}
+    for f in TMP.glob("*.jpg"):
         if f.stem not in live:
             f.unlink(missing_ok=True)
     threading.Thread(target=_worker, daemon=True, name="youtube").start()

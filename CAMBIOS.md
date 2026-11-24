@@ -2,6 +2,9 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.3.6
+- Portada en YouTube: por defecto el primer fotograma. Escoge otro momento antes de publicar, o ponla en lo que ya subiste.
+
 ## 1.3.5
 - En el editor puedes ver el clip como en un iPhone o Android, con YouTube, TikTok o Reels, y te avisa si algo queda tapado.
 - La Cola cuenta solo lo que falta. Lo que ya está en YouTube queda aparte.
