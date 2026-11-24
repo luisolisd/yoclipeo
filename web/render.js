@@ -61,6 +61,7 @@ class TimeMap {
 }
 
 const imgCache = new Map();
+const titleUrl = (ti) => `/api/img/title?text=${encodeURIComponent(ti.text)}&font=${ti.font}&style=${ti.style}&color=${ti.color}&size=${ti.size}`;
 function cachedImg(url) {
   if (!imgCache.has(url)) { const im = new Image(); im.src = url; imgCache.set(url, im); }
   const im = imgCache.get(url);
@@ -161,7 +162,7 @@ class Preview {
     // título
     if (p.title.on && t <= p.title.until) {
       const ti = p.title;
-      const im = cachedImg(`/api/img/title?text=${encodeURIComponent(ti.text)}&font=${ti.font}&style=${ti.style}&color=${ti.color}&size=${ti.size}`);
+      const im = cachedImg(titleUrl(ti));
       if (im) ctx.drawImage(im, 0, ti.y);
     }
     // stickers de marca
@@ -195,6 +196,14 @@ class Preview {
       }
     }
     ctx.restore();
+  }
+
+  pageBox(pg, sb) {                  // lo que ocupa una frase de los subtítulos
+    const ctx = this.ctx, size = Math.round(sb.size * (pg.big ? 1.9 : 1.0));
+    ctx.save(); ctx.font = `${sb.font === "clasica" ? "900 " : ""}${size}px ${FONT_CSS[sb.font] || FONT_CSS.impacto}`;
+    const w = pg.words.reduce((a, x) => a + ctx.measureText(x.w).width, 0) + ctx.measureText(" ").width * (pg.words.length - 1); ctx.restore();
+    const h = size * Math.min(1, 940 / (w || 1)) * 1.15, ww = Math.max(0, Math.min(940, w));
+    return { x: (1080 - ww) / 2, y: sb.y - h / 2, w: ww, h };
   }
 
   _drawPage(pg, t, sb) {
@@ -245,4 +254,4 @@ class Preview {
   }
 }
 
-window.CliperPreview = { Preview, TimeMap, interp, FONT_CSS, COLORS };
+window.CliperPreview = { Preview, cachedImg, titleUrl, TimeMap, interp, FONT_CSS, COLORS };

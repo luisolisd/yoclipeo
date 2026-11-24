@@ -45,7 +45,7 @@ En «Automático» usa lo primero que encuentre listo: Claude, otro servidor, Ol
 1. Pulsa **Nuevo** y pega un enlace o elige un video.
 2. Espera el análisis. En **Cola** se ve el avance.
 3. Abre el proyecto: el mapa muestra dónde está cada clip. Un clic en el mapa reproduce ese momento; arrastra para marcar un tramo y crear un clip a mano.
-4. En el editor cambia el titular, los subtítulos, el encuadre o el corte.
+4. En el editor cambia el titular, los subtítulos, el encuadre o el corte. Con iPhone o Android ves cómo queda en YouTube, TikTok y Reels, y te avisa si algo se tapa.
 5. Exporta. Los archivos quedan en `data\projects\<id>\exportados`.
 6. Si conectaste tu canal, publícalo desde **Salida** o selecciona varios clips y prográmalos.
 

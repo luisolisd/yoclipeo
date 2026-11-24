@@ -127,7 +127,9 @@
       <button class="btn sm" id="elook"><span data-ic="layers" data-s="16"></span>Estilo del clip</button>
       <button class="btn sm pri" id="eexport"><span data-ic="out" data-s="16"></span>Exportar</button>
     </header>
-    <section class="view" aria-label="Monitor"><canvas id="cv" width="540" height="960"></canvas>
+    <section class="view" aria-label="Monitor"><div class="stage" id="stage"><canvas id="cv" width="540" height="960"></canvas><div class="pvlay" id="pvlay"></div></div>
+      <div class="pvbar"><div class="seg inline" id="pvphone" role="group" aria-label="Ver en un teléfono"><button data-v="">Video</button><button data-v="iphone">iPhone</button><button data-v="android">Android</button></div><div class="seg inline" id="pvapp" role="group" aria-label="App" hidden><button data-v="youtube">YouTube</button><button data-v="tiktok">TikTok</button><button data-v="reels">Reels</button></div></div>
+      <div class="pvwarn" id="pvwarn" role="status" hidden></div>
       <div class="transport"><button id="b5" title="Atrás 5 s" aria-label="Atrás 5 segundos"><span data-ic="back1"></span></button><button id="play" title="Espacio" aria-label="Reproducir"><span data-ic="play" data-s="19"></span></button><button id="f5" title="Adelante 5 s" aria-label="Adelante 5 segundos"><span data-ic="fwd1"></span></button><span class="num" id="tcode">0:00 / 0:00</span></div></section>
     <nav class="secs" id="secs" role="tablist" aria-label="Secciones">
       <button role="tab" data-tab="t-titulo"><span data-ic="title" data-s="20"></span>Titular</button>
@@ -262,6 +264,7 @@
 <script src="app-name.js"></script>
 <script src="ui.js"></script>
 <script src="render.js"></script>
+<script src="phone.js"></script>
 <script src="timeline.js"></script>
 <script src="monitor.js"></script>
 <script src="library.js"></script>

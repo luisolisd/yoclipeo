@@ -2,6 +2,10 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.3.5
+- En el editor puedes ver el clip como en un iPhone o Android, con YouTube, TikTok o Reels, y te avisa si algo queda tapado.
+- La Cola cuenta solo lo que falta. Lo que ya está en YouTube queda aparte.
+
 ## 1.3.4
 - Al publicar en YouTube puedes elegir una lista de reproducción. Es opcional y pide un permiso más; actívalo en Ajustes o en la misma ventana de publicar.
 - Varios clips se suben siempre en el orden del video. Si uno falla, los que siguen lo esperan.

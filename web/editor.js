@@ -160,6 +160,12 @@ async function editor(pid, cid) {
   fillBtns("#e-tcolor", Object.entries(settings.title_colors), "title_color", asColor);
   slider("#e-tsize", "title_size", 62); slider("#e-ty", "title_y", 250, (v) => Math.round(v / 19.2) + " %");
 
+  // ---------- vista en un teléfono
+  phoneView(pv, (key, d) => {
+    const el = $(key === "title_y" ? "#e-ty" : "#e-suby"); if (!el) return;
+    el.value = (E[key] ?? +el.value) + d; el.oninput(); goTab(key === "title_y" ? "t-titulo" : "t-subs");
+  });
+
   // ---------- guion
   function renderWords() {
     const box = $("#words"); if (!box) return; box.innerHTML = ""; lastHi = -1;

@@ -4,6 +4,7 @@
 const YT_TERMS = "https://www.youtube.com/t/terms", G_PRIVACY = "https://policies.google.com/privacy", G_PERMS = "https://myaccount.google.com/permissions";
 const YT_SEES = { private: "Privado", unlisted: "Oculto", public: "Público" };
 const YT_ON = ["en cola", "exportando", "subiendo"];
+const ytExports = (ps, j) => j.kind === "export" && ps.some(p => p.status === "exportando" && p.pid === j.pid && p.cid === j.cid);   // esa exportación ya se cuenta como subida
 const ext = (url, txt) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${esc(txt)}</a>`;
 const ytDate = (d) => new Date(d).toLocaleString("es", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const ytLegal = () => `${ext(YT_TERMS, "Términos de YouTube")} y la ${ext(G_PRIVACY, "política de privacidad de Google")}`;
