@@ -2,7 +2,7 @@
 
 Convierte videos largos en clips verticales para TikTok, Reels y Shorts. Corre en tu PC con Windows: transcribe, elige los momentos con IA, encuadra, pone subtítulos y exporta. Sin marca de agua y sin cuenta.
 
-[☕ Invítame un café](https://ko-fi.com/luisolisd)
+[![Descargas](https://img.shields.io/github/downloads/luisolisd/yoclipeo/total?label=descargas&color=E8704F)](https://github.com/luisolisd/yoclipeo/releases) [☕ Invítame un café](https://ko-fi.com/luisolisd)
 
 ## Qué necesitas
 - Windows 10 u 11 de 64 bits.
