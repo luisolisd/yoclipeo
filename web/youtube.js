@@ -3,7 +3,7 @@
 
 const YT_TERMS = "https://www.youtube.com/t/terms", G_PRIVACY = "https://policies.google.com/privacy", G_PERMS = "https://myaccount.google.com/permissions";
 const YT_SEES = { private: "Privado", unlisted: "Oculto", public: "Público" };
-const YT_ON = ["en cola", "exportando", "subiendo"];
+const YT_ON = ["en cola", "exportando", "subiendo", "pausada"];
 const ytExports = (ps, j) => j.kind === "export" && ps.some(p => p.status === "exportando" && p.pid === j.pid && p.cid === j.cid);   // esa exportación ya se cuenta como subida
 const ext = (url, txt) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${esc(txt)}</a>`;
 const ytDate = (d) => new Date(d).toLocaleString("es", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -274,18 +274,19 @@ function ytState(p) {
   if (p.status === "exportando") return `Exportando, ${Math.round(p.progress)} %`;
   if (p.status === "subiendo") return `Subiendo, ${Math.round(p.progress)} %`;
   if (p.status === "procesando") return "Subido; YouTube lo está procesando";
+  if (p.status === "pausada") return `En pausa, sigue el ${ytDate(p.resume_at * 1000)}`;
   if (p.status === "cancelada") return "Cancelada";
   if (p.status === "error") return "No se publicó";
   if (p.publish_at) return new Date(p.publish_at) > new Date() ? `Programado para el ${ytDate(p.publish_at)}` : `Publicado el ${ytDate(p.publish_at)}`;
   return p.note ? p.note : p.privacy === "public" ? "Publicado" : p.privacy === "unlisted" ? "Subido como oculto" : "Subido en privado";
 }
-const ytSig = (ps) => JSON.stringify(ps.map(p => [p.id, p.status, p.progress, p.error, p.hidden, p.listed, p.cover_state, p.cover_error]));
+const ytSig = (ps) => JSON.stringify(ps.map(p => [p.id, p.status, p.progress, p.error, p.hidden, p.listed, p.resume_at, p.cover_state, p.cover_error]));
 function ytRows(ps) {
   return ps.map(p => {
     const on = YT_ON.includes(p.status), pub = p.video && !p.publish_at && p.privacy !== "private" && !p.note;
     const cvOk = p.video && ["procesando", "lista"].includes(p.status);
-    return `<div class="file ytf" data-pub="${p.id}"><i style="background-image:url('/api/projects/${p.pid}/thumb/${p.cid}')"></i><span class="n"${p.error ? ` style="white-space:normal"` : ""}><span title="${esc(p.title)}">${esc(p.title)}</span><small>${esc(ytState(p))}${p.channel ? ` · ${esc(p.channel.title)}` : ""}${p.playlist && p.playlist.id ? ` · ${p.listed === "si" ? "En la lista" : p.listed === "pendiente" ? "Agregando a la lista" : "Lista"} «${esc(p.playlist.title)}»` : ""}${cvOk ? { si: " · Portada puesta", pendiente: " · Portada en camino" }[p.cover_state] || "" : ""}</small>${cvOk && p.cover_error ? `<span class="${p.cover_state === "no" ? "err" : "mut small"}">${p.cover_state === "no" ? "Portada: " : ""}${esc(p.cover_error)}</span>` : ""}${p.listed === "no" ? `<span class="err">No entró a la lista: ${esc(p.list_error || "")}</span>` : ""}${p.error ? `<span class="err">${esc(p.error)}</span>` : ""}${on ? `<div class="line" style="margin-top:6px"><i style="width:${p.progress}%"></i></div>` : ""}</span>
-      ${cvOk ? `<button class="btn sm gh" data-cover>${p.cover_state === "si" ? "Cambiar portada" : "Poner portada"}</button>` : ""}${p.video ? `<a class="btn sm" href="${pub ? `https://youtu.be/${encodeURIComponent(p.video)}` : `https://studio.youtube.com/video/${encodeURIComponent(p.video)}/edit`}" target="_blank" rel="noopener noreferrer">${pub ? "Ver" : "Abrir en Studio"}</a>` : ""}${p.listed === "no" ? `<button class="btn sm" data-do="lista">Reintentar la lista</button>` : ""}${!p.video && ["error", "cancelada"].includes(p.status) ? `<button class="btn sm" data-do="reintentar">Reintentar</button>` : ""}${on ? `<button class="btn sm gh" data-do="cancelar">${p.stop ? "Cancelando…" : "Cancelar"}</button>` : `<button class="btn sm gh sq" data-do="quitar" aria-label="Quitar de la lista" title="Quitar de la lista">${icon("close", 14)}</button>`}</div>`;
+    return `<div class="file ytf" data-pub="${p.id}"><i style="background-image:url('/api/projects/${p.pid}/thumb/${p.cid}')"></i><span class="n"${p.error ? ` style="white-space:normal"` : ""}><span title="${esc(p.title)}">${esc(p.title)}</span><small>${esc(ytState(p))}${p.channel ? ` · ${esc(p.channel.title)}` : ""}${p.playlist && p.playlist.id ? ` · ${p.listed === "si" ? "En la lista" : p.listed === "pendiente" ? "Agregando a la lista" : "Lista"} «${esc(p.playlist.title)}»` : ""}${cvOk ? { si: " · Portada puesta", pendiente: " · Portada en camino" }[p.cover_state] || "" : ""}</small>${cvOk && p.cover_error ? `<span class="${p.cover_state === "no" ? "err" : "mut small"}">${p.cover_state === "no" ? "Portada: " : ""}${esc(p.cover_error)}</span>` : ""}${p.listed === "no" ? `<span class="err">No entró a la lista: ${esc(p.list_error || "")}</span>` : ""}${p.error ? `<span class="err">${esc(p.error)}</span>` : ""}${p.status === "pausada" ? `<span class="mut small" style="white-space:normal">${esc(p.pause || "")} Sigue solo si ${esc(window.APP_NAME)} está abierto.</span>` : on ? `<div class="line" style="margin-top:6px"><i style="width:${p.progress}%"></i></div>` : ""}</span>
+      ${cvOk ? `<button class="btn sm gh" data-cover>${p.cover_state === "si" ? "Cambiar portada" : "Poner portada"}</button>` : ""}${p.video ? `<a class="btn sm" href="${pub ? `https://youtu.be/${encodeURIComponent(p.video)}` : `https://studio.youtube.com/video/${encodeURIComponent(p.video)}/edit`}" target="_blank" rel="noopener noreferrer">${pub ? "Ver" : "Abrir en Studio"}</a>` : ""}${p.listed === "no" ? `<button class="btn sm" data-do="lista">Reintentar la lista</button>` : ""}${!p.video && ["error", "cancelada", "pausada"].includes(p.status) ? `<button class="btn sm" data-do="reintentar">${p.status === "pausada" ? "Seguir ya" : "Reintentar"}</button>` : ""}${on ? `<button class="btn sm gh" data-do="cancelar">${p.stop ? "Cancelando…" : "Cancelar"}</button>` : `<button class="btn sm gh sq" data-do="quitar" aria-label="Quitar de la lista" title="Quitar de la lista">${icon("close", 14)}</button>`}</div>`;
   }).join("");
 }
 function ytBind(box, again) {

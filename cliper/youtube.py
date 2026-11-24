@@ -44,6 +44,7 @@ CATEGORIES = {"24": "Entretenimiento", "22": "Gente y blogs", "23": "Comedia", "
               "25": "Noticias y política", "27": "Educación", "28": "Ciencia y tecnología", "1": "Cine y animación", "19": "Viajes"}
 NET = (urllib.error.URLError, OSError, http.client.HTTPException)
 ACTIVE = ("en cola", "exportando", "subiendo")
+LIMITS = ("uploadLimitExceeded", "quotaExceeded")      # no es un fallo: se espera y se sigue solo
 
 
 class YTError(RuntimeError):
@@ -130,9 +131,9 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _open = urllib.request.build_opener(_NoRedirect).open
 REASONS = {
-    "quotaExceeded": "Se acabó la cuota de hoy de tu app de Google. Se renueva a medianoche, hora del Pacífico.",
+    "quotaExceeded": "Se acabó la cuota de hoy de tu app de Google.",
     "rateLimitExceeded": "YouTube pidió esperar un momento.", "userRateLimitExceeded": "YouTube pidió esperar un momento.",
-    "uploadLimitExceeded": "Tu canal llegó a su límite de videos por hoy. Intenta mañana.",
+    "uploadLimitExceeded": "Tu canal llegó a su límite de videos por hoy.",
     "youtubeSignupRequired": "Esa cuenta de Google no tiene canal de YouTube.",
     "accessNotConfigured": "Falta activar «YouTube Data API v3» en tu proyecto de Google.",
     "SERVICE_DISABLED": "Falta activar «YouTube Data API v3» en tu proyecto de Google.",
@@ -485,7 +486,7 @@ def add(body):
             raise ValueError("Elige quién puede verlo.")
         if when and privacy != "private":
             raise ValueError("Un video programado se sube en privado hasta su hora.")
-        if not it.get("again") and any(x["pid"] == p["id"] and x["cid"] == c["id"] and (x.get("video") or x["status"] in ACTIVE) for x in old + new):
+        if not it.get("again") and any(x["pid"] == p["id"] and x["cid"] == c["id"] and (x.get("video") or x["status"] in (*ACTIVE, "pausada")) for x in old + new):
             raise ValueError("Ese clip ya se subió o se está subiendo" + tag + ".")
         new.append({"id": store.new_id(10), "cover": _moment(it.get("cover")), "pid": p["id"], "cid": c["id"], "channel": st["channel"], "title": title, "description": desc, "tags": _tags(it.get("tags")),
                     "privacy": privacy, "publish_at": when, "kids": body["kids"], "category": cat, "notify": body.get("notify") is not False,
@@ -513,16 +514,40 @@ def _push(i):
 
 def retry(i):
     p = _one(i)
-    if not p or p["status"] not in ("error", "cancelada") or p.get("video"):
+    if not p or p["status"] not in ("error", "cancelada", "pausada") or p.get("video"):
         raise ValueError("No hay nada que reintentar.")
     if p["publish_at"]:
         _when(p["publish_at"])
+    for x in pubs():                     # en un lote sigue todo lo que falta, desde el primero
+        if x["id"] == i or p.get("lot") and x.get("lot") == p["lot"] and x["status"] in ("error", "pausada") and not x.get("video"):
+            _again(x["id"])
+
+
+def _again(i):
     _set(i, status="en cola", progress=0, error="", stop=False, held=False)
     _push(i)
-    for x in pubs():                     # y los que esperaban a este, en su orden
-        if p.get("lot") and x.get("lot") == p["lot"] and x.get("held") and x["id"] != i and x["at"] >= p["at"]:
-            _set(x["id"], status="en cola", progress=0, error="", stop=False, held=False)
-            _push(x["id"])
+
+
+def _pause(why):
+    """Se llegó a un límite de YouTube: todo lo que falta espera y sigue solo."""
+    now, ps = time.time(), pubs()
+    if why == "quotaExceeded":           # se renueva a medianoche del Pacífico: 07:00 u 08:00 UTC
+        at = (int(now) // 86400) * 86400 + 8 * 3600 + 600
+        at += 86400 if at <= now else 0
+    else:                                # el del canal cuenta 24 horas
+        at = max([p.get("done") or 0 for p in ps if p.get("video")] + [0]) + 86400 + 300
+        at = at if at > now + 3600 else now + (21600 if at > 90000 else 86400)
+    for p in ps:
+        if p["status"] in ACTIVE and not p.get("stop"):
+            _set(p["id"], status="pausada", resume_at=at, pause=REASONS[why], progress=0, error="", held=False)
+
+
+def check_paused():
+    if not status()["connected"]:
+        return
+    for p in pubs():
+        if p["status"] == "pausada" and time.time() >= p.get("resume_at", 0):
+            _again(p["id"])
 
 
 def _hold(p):
@@ -530,21 +555,21 @@ def _hold(p):
     if p.get("lot"):
         for x in pubs():
             if x.get("lot") == p["lot"] and x["status"] == "en cola" and x["id"] != p["id"]:
-                _set(x["id"], status="error", held=True, error=f"Espera a «{p['title'][:50]}», para no perder el orden. Reintenta aquel y este sigue solo.")
+                _set(x["id"], status="error", held=True, error=f"Espera a «{p['title'][:50]}», para no perder el orden. Reintenta, o quita aquel para seguir sin él.")
 
 
 def cancel(i):
     p = _one(i)
-    if not p or p["status"] not in ACTIVE:
+    if not p or p["status"] not in (*ACTIVE, "pausada"):
         raise ValueError("Ya no se puede cancelar.")
-    _set(i, stop=True, **({"status": "cancelada"} if p["status"] == "en cola" else {}))
+    _set(i, stop=True, **({"status": "cancelada"} if p["status"] in ("en cola", "pausada") else {}))
 
 
 def forget(i):
     """Quita la fila de la lista. El video de YouTube no se toca."""
     with _lock:
         p = _one(i)
-        if not p or p["status"] in ACTIVE:
+        if not p or p["status"] in (*ACTIVE, "pausada"):
             raise ValueError("Primero cancélala.")
         if p.get("video"):
             _set(i, hidden=True)       # se conserva para no subir dos veces el mismo clip sin avisar
@@ -719,6 +744,8 @@ def _run(i):
             traceback.print_exc()
         if (_one(i) or {}).get("video"):
             return                       # ya subió: lo que falló fue la lista
+        if isinstance(e, YTError) and e.reason in LIMITS:
+            return _pause(e.reason)
         _set(i, status="error", error=str(e)[:400] if isinstance(e, YTError) else f"No se pudo publicar: {str(e)[:200]}")
         _hold(p)
 
@@ -890,7 +917,7 @@ def _checker():
     while True:
         _look.wait(30)
         _look.clear()
-        for fn in (check_processed, check_covers):
+        for fn in (check_paused, check_processed, check_covers):
             try:
                 fn()
             except Exception:

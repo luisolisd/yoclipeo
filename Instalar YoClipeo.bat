@@ -2,6 +2,7 @@
 setlocal
 title Instalar YoClipeo
 cd /d "%~dp0"
+if not exist "requirements.txt" goto nofiles
 set "PY="
 where py >nul 2>nul
 if not errorlevel 1 (
@@ -46,6 +47,13 @@ echo Listo. Abre "Iniciar YoClipeo.bat".
 echo Para elegir clips con IA en tu PC instala Ollama (https://ollama.com).
 echo El modelo de voz se baja solo con el primer video.
 goto end
+
+:nofiles
+echo.
+echo Faltan archivos. Parece que abriste este archivo dentro del ZIP.
+echo Cierra esta ventana, clic derecho en el ZIP, "Extraer todo", y abre el
+echo instalador desde la carpeta extraida.
+goto bad
 
 :nopython
 echo.

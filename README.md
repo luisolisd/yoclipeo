@@ -12,7 +12,7 @@ Convierte videos largos en clips verticales para TikTok, Reels y Shorts. Corre e
 - Opcional: [Ollama](https://ollama.com) para que la IA elija los momentos sin internet ni costo.
 
 ## Instalar
-1. Descarga el ZIP de [la última versión](https://github.com/luisolisd/yoclipeo/releases/latest) y extráelo en una carpeta.
+1. Descarga el ZIP de [la última versión](https://github.com/luisolisd/yoclipeo/releases/latest) y extráelo completo en una carpeta (clic derecho, **Extraer todo**). Dentro del ZIP no funciona.
 2. Doble clic en **`Instalar YoClipeo.bat`**. Crea su propio entorno en `.venv` y no toca otros programas.
 3. Doble clic en **`Iniciar YoClipeo.bat`**. Se abre http://127.0.0.1:8765. Cierra la ventana negra para apagarlo.
 
@@ -60,7 +60,7 @@ YouTube solo acepta subidas de programas registrados en Google. Cada persona reg
 
 No hace falta marca, dominio ni publicar la app. Solo funciona con la cuenta de Google que la creó; si sale `client_user_mismatch`, entraste con otra.
 
-No compartas ese archivo. Te sugerimos subir el primer clip en privado para revisar cómo queda. Cada envío pide confirmación. Varios clips se suben en el orden del video. Guarda tus hashtags favoritos para ponerlos con un clic. La portada es el primer fotograma o el momento que escojas; para que YouTube la acepte, tu cuenta debe estar [verificada](https://www.youtube.com/verify).
+No compartas ese archivo. Te sugerimos subir el primer clip en privado para revisar cómo queda. Cada envío pide confirmación. Varios clips se suben en el orden del video; si YouTube llega a su límite del día, siguen solos después. Guarda tus hashtags favoritos para ponerlos con un clic. La portada es el primer fotograma o el momento que escojas; para que YouTube la acepte, tu cuenta debe estar [verificada](https://www.youtube.com/verify).
 
 **Listas de reproducción (opcional):** para agregar tus videos a una lista, pulsa **Activar listas**. Google pide un permiso más amplio, administrar tu cuenta de YouTube; con él solo se leen tus listas y se agregan los videos que subas desde aquí.
 

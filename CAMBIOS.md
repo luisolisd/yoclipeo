@@ -2,6 +2,11 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.3.7
+- Si YouTube llega a su límite del día, las subidas quedan en pausa y siguen solas.
+- Reintentar un clip de un lote sigue con todo lo que falta, en el orden del video.
+- El instalador avisa si lo abres sin extraer el ZIP.
+
 ## 1.3.6
 - Portada en YouTube: por defecto el primer fotograma. Escoge otro momento antes de publicar, o ponla en lo que ya subiste.
 
