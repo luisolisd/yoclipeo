@@ -49,6 +49,7 @@ const ICONS = {
   upload: '<path d="M12 15V4M7 8.5l5-5 5 5M4 20h16"/>',
   settings: '<path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><rect x="12.5" y="4.5" width="5" height="5"/><rect x="6.5" y="14.5" width="5" height="5"/>',
   coffee: '<path d="M4 9.5h12v5.5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M16 11h1.8a2.4 2.4 0 0 1 0 4.8H16M8 3.5V6M12 3.5V6"/>',
+  update: '<circle cx="12" cy="12" r="8.5"/><path d="M12 16.500V8M8.500 11.200L12 7.700l3.500 3.500"/>',
   theme: '<circle cx="12" cy="12" r="8"/><path class="f" d="M12 4a8 8 0 0 1 0 16z"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
   folder: '<path d="M3.5 6h6l2 2.5h9V19h-17z"/>',

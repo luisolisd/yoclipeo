@@ -124,6 +124,7 @@ async function ajustes() {
   if (!location.hash.startsWith("#/ajustes")) return;
   mount("tpl-ajustes");
   if (window.APP_VERSION) { $("#s-about").hidden = false; $("#s-ver").textContent = `${window.APP_NAME}, versión ${window.APP_VERSION}`; $("#s-author").textContent = window.APP_AUTHOR; $("#s-notice").textContent = window.APP_NOTICE; }
+  updPanel($("#s-upd"));
   if (window.APP_DONATE) { $("#s-cafe").hidden = false; $("#s-cafe a").href = window.APP_DONATE; }
   const dirty = () => { $("#s-ok").textContent = "Cambios sin guardar"; $("#s-ok").style.color = "var(--mut)"; };
   const engine = choice($("#s-engine"), dirty); engine.value = s.engine;

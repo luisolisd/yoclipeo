@@ -7,7 +7,8 @@ import threading
 from pathlib import Path
 
 APP_NAME = "YoClipeo"  # nombre visible: la interfaz y el servidor lo toman de aquí
-VERSION = "1.2.1"       # súbela en cada actualización y anótala en CAMBIOS.md
+VERSION = "1.2.2"       # súbela en cada actualización y anótala en CAMBIOS.md: es lo que hace aparecer el botón «Actualizar»
+REPO, BRANCH = "luisolisd/yoclipeo", "main"     # de dónde salen las versiones nuevas
 AUTHOR = "Desarrollado por luisolisd"
 NOTICE = "Gratis. Prohibida su venta."
 DONATE_URL = "https://ko-fi.com/luisolisd"   # página para invitar un café (https://…); vacío = no aparece en ningún lado
@@ -101,6 +102,7 @@ DEFAULT_SETTINGS = {"api_key": "", "model": "claude-opus-5-5", "whisper_model": 
                     "local_url": "",             # otro servidor compatible con la API de OpenAI (LM Studio, llama.cpp…)
                     "local_model": "auto", "local_key": "",
                     "local_ok": "",              # dirección fuera de casa que la persona confirmó
+                    "updates": "on",             # on | off: buscar versiones nuevas en GitHub
                     "encoder": "auto"}           # auto | cpu | nvenc | qsv | amf
 
 

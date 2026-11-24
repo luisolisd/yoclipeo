@@ -250,7 +250,50 @@ def heuristic_select(transcript, duration, n_max, min_len, max_len, whole=False)
 
 def _title(text):
     t = re.sub(r"\s+", " ", text).strip().upper()
-    return (t[:42] + "…") if len(t) > 45 else t
+    if len(t) <= 45:
+        return t
+    t = t[:44]
+    t = t.rsplit(" ", 1)[0] if " " in t[15:] else t   # sin partir palabras
+    return t.rstrip(" .,:;-–—¿¡\"") + "…"
+
+
+_QUOTES = {'"': '"', "“": "”", "«": "»", "'": "'", "‘": "’"}
+
+
+def clean_title(text):
+    """Quita lo que sobra alrededor de un título: viñetas, «TÍTULO:», comillas y signos colgando al final."""
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    for _ in range(6):
+        was = t
+        t = t.strip("*_` ")
+        t = re.sub(r"^(?:#+\s+|[-–—•]\s+|[–—•]|t[ií]tul(?:o|ar)\s*:\s*)", "", t, flags=re.I)
+        t = re.sub(r"[\s:;,/|\-–—¿¡(\[“«‘]+$", "", t)
+        if t.count('"') % 2 and t.endswith('"'):
+            t = t[:-1]
+        if len(t) > 1 and _QUOTES.get(t[0]) == t[-1] and t[0] not in t[1:-1] and t[-1] not in t[1:-1]:
+            t = t[1:-1]
+        if t == was:
+            break
+    return t if re.search(r"\w", t) else ""
+
+
+def pick_title(m, words, start, end, used):
+    """El título de la IA; si viene vacío o repetido, el de su descripción o el de lo primero que se dice."""
+    def ok(t):
+        return t and t.upper() not in used
+    t = clean_title(m.get("title"))
+    if ok(t):
+        return t
+    desc = re.sub(r"#\w+", "", str(m.get("description") or ""))
+    said = " ".join(w["w"] for w in words if w["s"] >= start - 0.05 and w["e"] <= end + 0.05)
+    for text in (desc, said):
+        for sent in re.split(r"(?<=[.!?…])\s+", text):
+            sent = re.sub(r"[^\w.!?…»”\")]+$", "", sent.strip())          # emojis del final
+            sent = sent[:-1] if sent.endswith(".") and not sent.endswith("..") else sent
+            t = clean_title(_title(sent))
+            if len(t.split()) >= 2 and ok(t):
+                return t
+    return f"CLIP {int(start // 60)}:{int(start % 60):02d}"
 
 
 def _keywords(text):
@@ -410,7 +453,7 @@ def local_select(ai, transcript, duration, n_max, min_len, max_len, whole=False,
         if all(e <= o["start"] + 0.5 or c["start"] >= max(o["end"], o["start"] + min_len) - 0.5 for o in chosen):
             t = (c.get("title") or "").strip().upper()
             if t in titles:
-                c["title"] = ""          # título repetido: mejor sin título que uno copiado
+                c["title"] = ""          # repetido: se le busca otro (pick_title)
             titles.add(t)
             chosen.append(c)
     return chosen[: max(1, n_max)], {"model": model}
@@ -456,7 +499,7 @@ def select_clips(transcript, duration, opts, layout, progress_cb=None):
     except Exception as e:  # sin key, sin red, Ollama apagado, etc.
         info = {"engine": "reglas", "tried": engine, "fallback_reason": str(e)[:300]}
         raw = heuristic_select(transcript, duration, n_max, min_len, max_len, whole)
-    clips = []
+    clips, used = [], set()
     keep_min = max(3.0, min(min_len * 0.75, 15.0))
     for m in sorted(raw, key=lambda m: -int(m.get("score", 0))):
         s, e = float(m["start"]), float(m["end"])
@@ -476,6 +519,8 @@ def select_clips(transcript, duration, opts, layout, progress_cb=None):
             continue
         if any(not (e <= c["start"] + 0.3 or s >= c["end"] - 0.3) for c in clips):
             continue
+        m = {**m, "title": pick_title(m, words, s, e, used)}
+        used.add(m["title"].upper())
         clips.append(make_clip(round(s, 3), round(e, 3), words, m, layout))
     clips.sort(key=lambda c: -c["score"])
     return clips, info

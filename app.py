@@ -2,6 +2,13 @@
 
 Arranque:  .venv\\Scripts\\python app.py   →  http://127.0.0.1:8765
 """
+import sys
+
+if __name__ == "__main__" and "--servidor" not in sys.argv:
+    # este proceso solo vigila y actualiza; el trabajo lo hace otro (ver cliper/arranque.py)
+    from cliper import arranque
+    sys.exit(arranque.run(sys.argv[1:]))
+
 import json
 import shutil
 import threading
@@ -9,11 +16,11 @@ import time
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from cliper import config, defaults, directo, equipo, jobs, plan, store, sync
+from cliper import actualizar, arranque, config, defaults, directo, equipo, jobs, plan, store, sync
 from cliper.analyze import make_clip
 from cliper.transcribe import all_words
 
@@ -73,7 +80,7 @@ def get_settings():
             "key_hint": (key[:7] + "…" + key[-4:]) if len(key) > 12 else "",
             "engine": s["engine"], "ollama_model": s["ollama_model"], "ollama_dir": s["ollama_dir"],
             "local_url": s["local_url"], "local_model": s["local_model"], "has_local_key": bool(s["local_key"]),
-            "encoder": s["encoder"],
+            "encoder": s["encoder"], "updates": s["updates"],
             "fonts": {k: v["label"] for k, v in config.FONTS.items()}, "colors": config.COLORS,
             "title_styles": config.TITLE_STYLES, "title_colors": config.TITLE_COLORS}
 
@@ -81,7 +88,7 @@ def get_settings():
 @app.post("/api/settings")
 def set_settings(body: dict):
     from cliper import local_server
-    keys = ("api_key", "model", "whisper_model", "engine", "ollama_model", "ollama_dir", "encoder", "local_url", "local_model", "local_key")
+    keys = ("api_key", "model", "whisper_model", "engine", "ollama_model", "ollama_dir", "encoder", "local_url", "local_model", "local_key", "updates")
     clean = {k: v.strip() for k, v in body.items() if k in keys and isinstance(v, str)}
     if "local_url" in clean:
         old = config.load_settings()
@@ -100,6 +107,8 @@ def set_settings(body: dict):
                 clean["local_key"] = ""
         if body.get("local_key_clear") is True:
             clean["local_key"] = ""
+    if clean.get("updates", "on") not in ("on", "off"):
+        raise HTTPException(400, "Valor no válido")
     config.save_settings(clean)
     local_server.forget()
     return get_settings()
@@ -170,6 +179,37 @@ def ollama_pull_stop():
     from cliper import local_llm
     local_llm.pull_stop()
     return {"ok": True}
+
+
+# ------------------------------------------------------------ actualizaciones
+
+def _from_here(request):
+    """Solo desde la página del programa: otra página abierta en el navegador no puede pedirlo."""
+    from urllib.parse import urlsplit
+    h, o = request.headers.get("host", ""), request.headers.get("origin", "")
+    if urlsplit("//" + h).hostname not in ("127.0.0.1", "localhost") or (o and urlsplit(o).netloc != h):
+        raise HTTPException(403, "No permitido")
+
+
+@app.get("/api/update")
+def update_status():
+    return actualizar.status()
+
+
+@app.post("/api/update/check")
+def update_check(request: Request):
+    _from_here(request)
+    return actualizar.check()
+
+
+@app.post("/api/update/install")
+def update_install(request: Request, body: dict):
+    _from_here(request)
+    try:
+        actualizar.install(str(body.get("version", "")))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return actualizar.status()
 
 
 # ------------------------------------------------------------ tu equipo
@@ -826,15 +866,17 @@ def _already_open():
 
 
 if __name__ == "__main__":
-    import sys
     import uvicorn
+    watched = arranque.follow_parent(sys.argv)
     if _already_open():
         print(f"{config.APP_NAME} ya está abierto en http://{HOST}:{PORT}")
         if "--no-browser" not in sys.argv:
             webbrowser.open(f"http://{HOST}:{PORT}")
         sys.exit(0)
+    arranque.confirm_when_up(PORT)
     jobs.start()
     equipo.start(_working)
+    actualizar.start(watched)
     if "--no-browser" not in sys.argv:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://{HOST}:{PORT}")).start()
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")

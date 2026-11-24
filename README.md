@@ -51,6 +51,7 @@ En «Automático» usa lo primero que encuentre listo: Claude, otro servidor, Ol
 - Todo queda en la carpeta `data`: videos, proyectos, ajustes y claves. **No la compartas ni la subas.**
 - El guion sale de tu PC solo si eliges Claude o un servidor que esté en otro equipo.
 - El programa escucha únicamente en tu PC (127.0.0.1).
+- Para avisarte de versiones nuevas consulta este repositorio cada 10 minutos. No manda nada tuyo, y se apaga en Ajustes, «Acerca de».
 
 ## Problemas comunes
 - **«Falta una DLL» al instalar:** instala [Microsoft Visual C++ Redistributable x64](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
@@ -60,7 +61,11 @@ En «Automático» usa lo primero que encuentre listo: Claude, otro servidor, Ol
 - **La PC se suspende:** en esperas y videos largos debe quedar encendida y sin suspenderse.
 
 ## Actualizar
-Descarga el ZIP nuevo desde [la página del proyecto](https://github.com/luisolisd/yoclipeo) y copia su contenido encima, sin borrar `data`. Después abre `Instalar YoClipeo.bat` otra vez.
+Cuando hay una versión nueva aparece el botón **Actualizar** abajo a la izquierda, arriba del de claro u oscuro. Te dice qué cambió, la descarga de aquí, la instala y vuelve a abrir sola. Si está procesando, descargando o exportando algo, espera a que termine. Si la versión nueva no abre, regresa a la anterior.
+
+Para eso hay que abrirlo con `Iniciar YoClipeo.bat`. Tus videos, proyectos, modelos y ajustes no se tocan.
+
+**Desde la 1.2.1**, que todavía no trae el botón: descarga el ZIP, ciérralo, copia su contenido encima sin borrar `data` y abre `Instalar YoClipeo.bat` otra vez.
 
 ## Uso responsable
 Baja y publica solo contenido tuyo o con permiso, y respeta las reglas de cada plataforma.

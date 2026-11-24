@@ -16,7 +16,7 @@
   <a class="nav" href="#/cola" data-nav="cola"><span data-ic="queue" data-s="20"></span>Cola<b class="badge" id="qbadge" hidden></b></a>
   <a class="nav" href="#/descargas" data-nav="descargas"><span data-ic="download" data-s="20"></span>Descargas</a>
   <a class="nav" href="#/ajustes" data-nav="ajustes"><span data-ic="settings" data-s="20"></span>Ajustes</a>
-  <div class="foot"><button id="theme" title="Claro u oscuro" aria-label="Cambiar entre claro y oscuro"><span data-ic="theme"></span></button><a class="ver" id="ver" href="#/ajustes" hidden></a><a class="cafe" id="cafe" target="_blank" rel="noopener noreferrer" title="Invítame un café" aria-label="Invítame un café" hidden><span data-ic="coffee"></span></a><a class="sys" id="sysbadge" href="#/ajustes"></a></div>
+  <div class="foot"><button class="upd" id="upd" hidden><span data-ic="update" data-s="20"></span><b>Actualizar</b></button><button id="theme" title="Claro u oscuro" aria-label="Cambiar entre claro y oscuro"><span data-ic="theme"></span></button><a class="ver" id="ver" href="#/ajustes" hidden></a><a class="cafe" id="cafe" target="_blank" rel="noopener noreferrer" title="Invítame un café" aria-label="Invítame un café" hidden><span data-ic="coffee"></span></a><a class="sys" id="sysbadge" href="#/ajustes"></a></div>
 </nav>
 <main id="view"></main>
 <div id="toasts"></div>
@@ -254,7 +254,7 @@
     <div class="savebar"><button class="btn pri">Guardar ajustes</button><span class="ok" id="s-ok" role="status"></span></div>
   </form>
   <div class="setgrid"><div><h3>Predeterminados</h3><p class="mut">Se guardan desde un clip («Estilo del clip») o al crear un proyecto. Cada carpeta usa los suyos; lo que le falte sale de los generales.</p></div><div id="s-defs"></div></div>
-  <div class="setgrid" id="s-about" hidden><div><h3>Acerca de</h3></div><div><p id="s-ver"></p><p id="s-author" style="margin-top:6px"></p><p class="mut" id="s-notice" style="margin-top:6px"></p><div id="s-cafe" hidden><p style="margin:16px 0 10px">Si te sirve, puedes apoyar su desarrollo.</p><a class="btn" target="_blank" rel="noopener noreferrer"><span data-ic="coffee" data-s="16"></span>Invítame un café</a></div></div></div>
+  <div class="setgrid" id="s-about" hidden><div><h3>Acerca de</h3></div><div><p id="s-ver"></p><p id="s-author" style="margin-top:6px"></p><p class="mut" id="s-notice" style="margin-top:6px"></p><div id="s-upd" style="margin-top:16px"></div><div id="s-cafe" hidden><p style="margin:16px 0 10px">Si te sirve, puedes apoyar su desarrollo.</p><a class="btn" target="_blank" rel="noopener noreferrer"><span data-ic="coffee" data-s="16"></span>Invítame un café</a></div></div></div>
 </div></template>
 
 <script src="app-name.js"></script>
@@ -265,6 +265,7 @@
 <script src="project.js"></script>
 <script src="editor.js"></script>
 <script src="equipo.js"></script>
+<script src="actualizar.js"></script>
 <script src="pages.js"></script>
 <script src="app.js"></script>
 </body>
