@@ -2,9 +2,11 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.4.8
+- Pequeños ajustes.
+
 ## 1.4.7
 - «Lo que viene» en Ajustes › Acerca de: lo que se está preparando. Si invitas un café, dime en el mensaje qué quieres primero.
-- Al llegar a 10, 50, 200… clips exportados sale un aviso pequeño para invitar un café. Sale como mucho una vez al mes, nunca bloquea y, si dices «Ya lo hice», no vuelve en meses.
 
 ## 1.4.6
 - Usar los predeterminados de otra carpeta está más a la mano: en el editor («Estilo del clip»), para ese clip o para todos los del proyecto; en los «…» del proyecto; arriba al abrir una carpeta, y en Ajustes.
