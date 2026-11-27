@@ -7,11 +7,15 @@ import threading
 from pathlib import Path
 
 APP_NAME = "YoClipeo"  # nombre visible: la interfaz y el servidor lo toman de aquí
-VERSION = "1.3.7"       # súbela en cada actualización y anótala en CAMBIOS.md: es lo que hace aparecer el botón «Actualizar»
+VERSION = "1.4.7"       # súbela en cada actualización y anótala en CAMBIOS.md: es lo que hace aparecer el botón «Actualizar»
 REPO, BRANCH = "luisolisd/yoclipeo", "main"     # de dónde salen las versiones nuevas
 AUTHOR = "Desarrollado por luisolisd"
 NOTICE = "Gratis. Prohibida su venta."
 DONATE_URL = "https://ko-fi.com/luisolisd"   # página para invitar un café (https://…); vacío = no aparece en ningún lado
+ROADMAP = [   # «Lo que viene» (Ajustes › Acerca de): solo lo que de verdad se está considerando. Edítalo en cada versión
+    "Publicar en TikTok desde YoClipeo",
+    "Publicar en Instagram y Facebook desde YoClipeo",
+]
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"

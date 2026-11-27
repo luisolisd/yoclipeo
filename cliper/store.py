@@ -89,38 +89,92 @@ def list_all():
     return out
 
 
-def _wipe(d):
-    """Borra la carpeta; si algo está en uso (Windows no deja), queda marcada para terminar después."""
+def gone_name(d):
+    """Cómo se llamaba un proyecto borrado a medias."""
+    try:
+        return (d / GONE).read_text(encoding="utf-8")[:200]
+    except (OSError, ValueError):
+        return ""
+
+
+def _mark(d, name):
+    try:
+        if d.exists() and not (d / GONE).exists():
+            (d / GONE).write_text(name, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _wipe(d, name=""):
+    """Borra la carpeta; si algo está en uso (Windows no deja), queda marcada para terminar después.
+    La marca se pone antes y se quita al final: si se apaga a la mitad, no queda un resto sin dueño."""
     with _lock:
-        shutil.rmtree(d, ignore_errors=True)
-        if not d.exists():
-            return True
+        name = gone_name(d) or name
+        _mark(d, name)
         try:
-            (d / GONE).touch()
+            inside = [x for x in d.iterdir() if x.name != GONE]
         except OSError:
-            return not d.exists()
-        return False
+            inside = []
+        for x in inside:
+            if x.is_dir() and not x.is_symlink():      # rmtree no entra en enlaces a otras carpetas
+                shutil.rmtree(x, ignore_errors=True)
+            else:
+                try:
+                    x.unlink()
+                except OSError:
+                    pass
+        try:
+            if all(x.name == GONE for x in d.iterdir()):
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+        _mark(d, name)                # la carpeta misma seguía abierta
+        return not d.exists()
+
+
+_wiping = set()
 
 
 def _wipe_later(d):
-    for i in range(400):          # unos 30 min; si ni así, se termina al volver a abrir
-        time.sleep(1 if i < 20 else 5)
-        if not (d / GONE).exists() or _wipe(d):
+    try:
+        i = 0
+        while (d / GONE).exists() and not _wipe(d):       # lo intenta mientras esté abierto, cada vez más espaciado
+            time.sleep(1 if i < 20 else 5 if i < 400 else 60)
+            i += 1
+    finally:
+        with _lock:
+            _wiping.discard(d)
+
+
+def _keep_wiping(d):
+    with _lock:
+        if d in _wiping:
             return
+        _wiping.add(d)
+    threading.Thread(target=_wipe_later, args=(d,), daemon=True, name="borrar").start()
 
 
 def delete(pid):
-    """Borra el proyecto. Lo que esté abierto (la vista previa en el navegador, una descarga) se borra en cuanto se suelta."""
+    """Borra el proyecto. Lo que esté abierto (la vista previa en el navegador, una descarga) se borra en cuanto se suelta.
+    Devuelve si quedó algo pendiente."""
     d = pdir(pid)
-    if not _wipe(d):
-        threading.Thread(target=_wipe_later, args=(d,), daemon=True, name="borrar").start()
+    try:
+        name = (load(pid) or {}).get("name") or ""
+    except (OSError, ValueError):
+        name = ""
+    for i in range(3):
+        if _wipe(d, name):
+            return False
+        time.sleep(.3)
+    _keep_wiping(d)
+    return True
 
 
 def finish_deleted():
     """Al abrir: termina de borrar las carpetas que quedaron marcadas. Nunca toca una sin la marca."""
     for d in list(PROJECTS.iterdir()):
         if (d / GONE).exists() and not _wipe(d):
-            threading.Thread(target=_wipe_later, args=(d,), daemon=True, name="borrar").start()
+            _keep_wiping(d)
 
 
 def find_clip(p, cid):

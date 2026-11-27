@@ -162,7 +162,15 @@ Criterios:
 Ordena los clips de mejor a peor."""
 
 
-def claude_select(transcript, duration, n_max, min_len, max_len, whole=False):
+CHAT_HINT = """
+El video es de un directo y sabemos cuánto reaccionó su chat. Úsalo como una pista más, no como la única:
+- Si un momento bueno coincide con un chat alto, súbele el score y prefiérelo entre dos parecidos.
+- El chat también se dispara por saludos, despedidas, regalos o problemas de audio: si lo que se dice no se entiende solo o no engancha, no lo elijas aunque el chat esté alto.
+- Un momento muy bueno con el chat normal sigue siendo válido.
+- El chat es solo para decidir: no lo menciones en títulos, descripciones ni razones. El título cuenta lo que pasa en el video."""
+
+
+def claude_select(transcript, duration, n_max, min_len, max_len, whole=False, pulse=None):
     import anthropic
     st = load_settings()
     client = anthropic.Anthropic(api_key=st["api_key"]) if st.get("api_key") else anthropic.Anthropic()
@@ -175,13 +183,16 @@ def claude_select(transcript, duration, n_max, min_len, max_len, whole=False):
     else:
         ask = (f"El video dura {duration / 60:.1f} minutos. Elige hasta {n_max} clips de entre {min_len} y {max_len} segundos "
                "(solo los que valgan la pena; si hay pocos momentos buenos, devuelve menos).")
+    peaks = pulse.peaks() if pulse and not whole else []
+    if peaks:
+        tx += "\n\nPICOS DEL CHAT (segundo del video: veces lo normal):\n" + "\n".join(f"{t}: {x:.1f}x{' ' + k if k else ''}" for t, x, k in peaks)
     resp = client.beta.messages.create(
         model=st.get("model") or "claude-opus-5-5",
         max_tokens=20000,
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
         output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=SYSTEM,
+        system=SYSTEM + (CHAT_HINT if peaks else ""),
         messages=[{"role": "user", "content": f"{ask}\n\nTRANSCRIPCIÓN:\n{tx}"}],
     )
     if resp.stop_reason == "refusal":
@@ -200,7 +211,7 @@ HOOKS = ["nadie", "nunca", "secreto", "error", "verdad", "increíble", "mentira"
          "no sabías", "por qué", "imagínate", "atención", "real", "gratis"]
 
 
-def heuristic_select(transcript, duration, n_max, min_len, max_len, whole=False):
+def heuristic_select(transcript, duration, n_max, min_len, max_len, whole=False, pulse=None):
     lines = build_lines(transcript)
     if not lines:
         return []
@@ -233,7 +244,7 @@ def heuristic_select(transcript, duration, n_max, min_len, max_len, whole=False)
         sc += 5 * first.count("?") + 3 * low.count("!")
         sc += 4 * len(re.findall(r"\d", first))
         sc += min(10, len(t.split()) / max(1, e - s) * 3)  # densidad de habla
-        cands.append((min(95, int(sc)), s, e, t, lines[i]["text"]))
+        cands.append((min(91 if pulse else 95, int(sc)) + (pulse.bonus(s, e) if pulse else 0), s, e, t, lines[i]["text"]))
     cands.sort(reverse=True)
     chosen = []
     for sc, s, e, t, first in cands:
@@ -380,7 +391,7 @@ class _Ollama:
         return self.ai.chat_json(system, user, schema, self.model, num_ctx, progress_cb)
 
 
-def local_select(ai, transcript, duration, n_max, min_len, max_len, whole=False, progress_cb=None):
+def local_select(ai, transcript, duration, n_max, min_len, max_len, whole=False, progress_cb=None, pulse=None):
     import math
     from .local_server import ContextError
     model = ai.model
@@ -393,10 +404,12 @@ def local_select(ai, transcript, duration, n_max, min_len, max_len, whole=False,
         blocks = build_blocks(lines, min_len, max_len)
     for n, b in enumerate(blocks, 1):
         b["id"] = n
-    room = ai.budget(LOCAL_SYSTEM)
+        b["chat"] = pulse.note(b["s"], b["e"]) + " " if pulse and not whole and pulse.note(b["s"], b["e"]) else ""
+    system = LOCAL_SYSTEM + (CHAT_HINT if any(b["chat"] for b in blocks) else "")
+    room = ai.budget(system)
     chunks, cur, size = [], [], 0
     for b in blocks:
-        tok = len(b["text"]) / 3.2 + 20
+        tok = (len(b["text"]) + len(b["chat"])) / 3.2 + 20
         if cur and size + tok > room:
             chunks.append(cur)
             cur, size = [], 0
@@ -409,14 +422,14 @@ def local_select(ai, transcript, duration, n_max, min_len, max_len, whole=False,
     k = 0
     while k < len(chunks):
         ch = chunks[k]
-        tx = "\n\n".join(f"#{b['id']} [{b['s']:.0f}-{b['e']:.0f} s] {b['text']}" for b in ch)
+        tx = "\n\n".join(f"#{b['id']} [{b['s']:.0f}-{b['e']:.0f} s] {b['chat']}{b['text']}" for b in ch)
         if whole:
             ask = "Este video se publicará completo: devuelve exactamente 1 clip con id=1."
         else:
             # pide de más: entre bloques que se pisan solo sobrevive el mejor
             n = max(1, min(len(ch), math.ceil(1.6 * n_max * len(ch) / max(1, len(blocks))) + 1))
             ask = f"Elige los {n} mejores bloques de esta lista (ids distintos)."
-        toks = int(len(tx) / 3.2 + len(LOCAL_SYSTEM) / 3 + 1500)
+        toks = int(len(tx) / 3.2 + len(system) / 3 + 1500)
         num_ctx = 8192 if toks <= 8192 else min(32768, (toks // 4096 + 1) * 4096)
 
         def prog(n_tok, secs, k=k):
@@ -427,7 +440,7 @@ def local_select(ai, transcript, duration, n_max, min_len, max_len, whole=False,
         if progress_cb:
             progress_cb(k / len(chunks), f"IA local ({model}) · tramo {k + 1}/{len(chunks)} · leyendo la transcripción…")
         try:
-            data = ai.chat(LOCAL_SYSTEM, f"{ask}\n\nBLOQUES:\n{tx}", LOCAL_SCHEMA, num_ctx, prog)
+            data = ai.chat(system, f"{ask}\n\nBLOQUES:\n{tx}", LOCAL_SCHEMA, num_ctx, prog)
         except ContextError:
             if len(ch) < 2:
                 raise
@@ -444,7 +457,13 @@ def local_select(ai, transcript, duration, n_max, min_len, max_len, whole=False,
             c.setdefault("emojis", [])
             c["category"] = c.get("category") if c.get("category") in CATEGORIES else "Alta retención"
             found.append(c)
+    if pulse and not whole:                # un modelo chico puede pasar por alto la nota: esto la hace pesar siempre
+        for c in found:
+            c["score"] = int(c.get("score", 0)) + pulse.bonus(c["start"], c["end"])
     found.sort(key=lambda c: -int(c.get("score", 0)))
+    if pulse:
+        for c in found:
+            c["score"] = min(99, int(c.get("score", 0)))
     # sin solapes (las dos pasadas de bloques se pisan entre sí)
     # (se compara con el largo que tendrá tras ajustarse al mínimo pedido)
     chosen, titles = [], set()
@@ -474,7 +493,7 @@ def choose_engine(fresh=False):
     return "reglas"
 
 
-def select_clips(transcript, duration, opts, layout, progress_cb=None):
+def select_clips(transcript, duration, opts, layout, progress_cb=None, pulse=None):
     n_max = int(opts.get("max_clips", 10))
     min_len = float(opts.get("min_len", 20))
     max_len = float(opts.get("max_len", 60))
@@ -485,12 +504,12 @@ def select_clips(transcript, duration, opts, layout, progress_cb=None):
     raw = None
     try:
         if engine == "claude":
-            raw, usage = claude_select(transcript, duration, n_max, min_len, max_len, whole)
+            raw, usage = claude_select(transcript, duration, n_max, min_len, max_len, whole, pulse)
             info = {"engine": "claude", **usage}
         elif engine in ("ollama", "servidor"):
             from .local_server import Session
             ai = _Ollama() if engine == "ollama" else Session()
-            raw, usage = local_select(ai, transcript, duration, n_max, min_len, max_len, whole, progress_cb)
+            raw, usage = local_select(ai, transcript, duration, n_max, min_len, max_len, whole, progress_cb, pulse)
             info = {"engine": engine, **usage}
             if not raw:
                 raise RuntimeError("la IA local no devolvió clips válidos")
@@ -498,7 +517,7 @@ def select_clips(transcript, duration, opts, layout, progress_cb=None):
             raise RuntimeError("motor configurado: reglas")
     except Exception as e:  # sin key, sin red, Ollama apagado, etc.
         info = {"engine": "reglas", "tried": engine, "fallback_reason": str(e)[:300]}
-        raw = heuristic_select(transcript, duration, n_max, min_len, max_len, whole)
+        raw = heuristic_select(transcript, duration, n_max, min_len, max_len, whole, pulse)
     clips, used = [], set()
     keep_min = max(3.0, min(min_len * 0.75, 15.0))
     for m in sorted(raw, key=lambda m: -int(m.get("score", 0))):
@@ -522,5 +541,7 @@ def select_clips(transcript, duration, opts, layout, progress_cb=None):
         m = {**m, "title": pick_title(m, words, s, e, used)}
         used.add(m["title"].upper())
         clips.append(make_clip(round(s, 3), round(e, 3), words, m, layout))
+        if pulse and not whole and pulse.look(s, e)["level"]:
+            clips[-1]["chat_heat"] = pulse.look(s, e)
     clips.sort(key=lambda c: -c["score"])
     return clips, info

@@ -61,6 +61,7 @@ class TimeMap {
 }
 
 const imgCache = new Map();
+const CHAT_URL = (it, ch) => `/api/img/chat?x=${encodeURIComponent(it.x)}&u=${encodeURIComponent(it.u)}&c=${encodeURIComponent(it.c)}&s=${ch.size}&w=${ch.w}`;
 const titleUrl = (ti) => `/api/img/title?text=${encodeURIComponent(ti.text)}&font=${ti.font}&style=${ti.style}&color=${ti.color}&size=${ti.size}`;
 function cachedImg(url) {
   if (!imgCache.has(url)) { const im = new Image(); im.src = url; imgCache.set(url, im); }
@@ -159,6 +160,7 @@ class Preview {
       try { ctx.drawImage(v, (cx - cw / 2) * fw, (cy - ch / 2) * fh, cw * fw, ch * fh, dx, dy, dw, dh); } catch (e) {}
       ctx.filter = "none";
     }
+    if (p.chat) this._drawChat(p.chat, t);
     // título
     if (p.title.on && t <= p.title.until) {
       const ti = p.title;
@@ -196,6 +198,38 @@ class Preview {
       }
     }
     ctx.restore();
+  }
+
+  // chat: mismas cuentas que draw_chat en cliper/render.py
+  _drawChat(ch, t) {
+    const ctx = this.ctx, size = ch.size, fr = Math.floor(t * ch.fps);
+    const emote = (i, x, y, w, h) => { const m = ch.emotes[i], im = m && cachedImg(`/api/img/emote/${i}`); if (im) ctx.drawImage(im, (fr % m.n) * m.w, 0, m.w, m.h, x, y, w, h); };
+    for (const [s, i, x, h, rot, ph] of ch.parts) {
+      const k = (t - s) / ch.fly, m = ch.emotes[i]; if (k < -.3 || k >= 1 || !m) continue;
+      if (k < 0) { cachedImg(`/api/img/emote/${i}`); continue; }
+      const pop = Math.min(1, k / .06), a = Math.min(1, (1 - k) / .3) * pop, hh = h * (.5 + .5 * pop), ww = hh * m.w / m.h;
+      ctx.save(); ctx.globalAlpha = a; ctx.translate(x + Math.sin(k * 6 + ph) * 16, ch.y - ch.rise * (1 - Math.pow(1 - k, 1.6))); ctx.rotate(-rot * Math.PI / 180);
+      emote(i, -ww / 2, -hh / 2, ww, hh); ctx.restore();
+    }
+    const gap = Math.round(size * .22), top = ch.y - ch.h; let y = ch.y;
+    for (let n = ch.items.length - 1; n >= 0; n--) {
+      const it = ch.items[n]; if (it.s > t + 5) continue;
+      const im = cachedImg(CHAT_URL(it, ch)); if (it.s > t || t - it.s >= ch.life) continue;
+      const k = 1 - Math.pow(1 - Math.min(1, Math.max(0, (t - it.s) / .22)), 3);
+      y += (1 - k) * (it.h + gap) - it.h; if (y + it.h < top) break;
+      const a = Math.min(k, (ch.life - (t - it.s)) / .4, 1 - Math.max(0, top - y) / 24);
+      if (a > .06 && im) { ctx.globalAlpha = Math.min(1, a); ctx.drawImage(im, ch.x + (ch.right ? ch.w - it.w : 0), Math.round(y)); ctx.globalAlpha = 1; }
+      y -= gap;
+    }
+    let cur = []; for (const c of ch.counts) { if (c[0] > t) break; cur = c[1]; }
+    const g = Math.round(size * .28), H = Math.round(size * 1.5), eh = Math.round(size * 1.15);
+    const boxes = cur.filter(([i]) => ch.emotes[i]).map(([i, n, tw]) => { const m = ch.emotes[i], ew = Math.min(Math.round(eh * 2.2), Math.round(eh * m.w / m.h)); return { i, n, tw, ew, rw: Math.round(eh * m.w / m.h), w: Math.round(ew + tw + size * 1.15) }; });
+    const tot = boxes.reduce((a, b) => a + b.w, 0) + g * (boxes.length - 1); let bx = Math.max(0, Math.min(1080 - tot, ch.x + (ch.right ? ch.w - tot : 0))); const by = ch.y - (ch.items.length ? ch.h + g : 0) - H;
+    for (const b of boxes) {
+      ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.beginPath(); ctx.roundRect(bx, by, b.w, H, H / 2); ctx.fill();
+      ctx.font = `bold ${size}px "Segoe UI"`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "#fff"; ctx.fillText("×" + b.n, bx + size * .65 + b.ew, by + H / 2 + size * .35);
+      emote(b.i, bx + size * .4 + (b.ew - b.rw) / 2, by + (H - eh) / 2, b.rw, eh); bx += b.w + g;
+    }
   }
 
   pageBox(pg, sb) {                  // lo que ocupa una frase de los subtítulos

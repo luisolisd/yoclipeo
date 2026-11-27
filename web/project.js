@@ -31,7 +31,7 @@ function project(pid) {
   function head(p) {
     if (document.activeElement !== name) name.textContent = p.name;
     const s = p.selection || {};
-    $("#pmeta").textContent = [p.media ? `${fmtLong(p.media.duration)}, ${p.media.width}×${p.media.height}` : "", p.language ? `idioma ${p.language}` : "", p.transcriber ? `voz: ${p.transcriber}` : "",
+    $("#pmeta").textContent = [p.source && p.source.periods ? `${plural(p.source.periods.length, "periodo", "periodos")} del directo: ${p.source.periods.map(([a, b]) => `${fmt(a)} a ${fmt(b)}`).join(" y ")}` : "", p.media ? `${fmtLong(p.media.duration)}, ${p.media.width}×${p.media.height}` : "", p.language ? `idioma ${p.language}` : "", p.transcriber ? `voz: ${p.transcriber}` : "",
       s.engine ? `momentos: ${s.engine === "claude" ? "Claude, " + s.model : ["ollama", "servidor"].includes(s.engine) ? "IA local, " + (s.model || "") : s.engine}` : ""].filter(Boolean).join("  ·  ");
     const warn = p.status === "listo" && /sin IA|vista previa/.test(p.message || "");
     $("#pstatus").innerHTML = isBusy(p) ? `<div class="proc"><div class="ms">${esc(p.message || p.status)}<span>${isWait(p) ? "" : Math.round(p.progress || 0) + "%"}</span></div>${isWait(p) ? `<button class="btn sm" id="waitstop" style="margin-top:14px">Bajar ahora, sin esperar</button>` : stagesHtml(p)}${isRec(p) ? `<button class="btn sm" id="recstop" style="margin-top:14px">Detener y usar lo grabado</button>` : ""}</div>`
@@ -62,7 +62,7 @@ function project(pid) {
       const el = document.createElement("article"); el.className = "clip" + (sel.has(c.id) ? " sel" : ""); el.dataset.id = c.id;
       el.innerHTML = `<button class="th" style="background-image:url('/api/projects/${pid}/thumb/${c.id}?v=${c.thumb_v || 0}')" aria-label="Editar «${esc(c.title)}»">${(c.exports || []).length ? `<span class="done">${icon("check", 12)}Exportado</span>` : ""}</button>
         <button class="pick" aria-label="Seleccionar" aria-pressed="${sel.has(c.id)}">${icon("check", 15)}</button>
-        <div class="cap"><span class="no">${c.no}</span><div class="tt" title="${esc(c.title)}">${esc(c.title)}</div><div class="mt">${potBars(c.score)}<span class="at">${fmt(c.start)}</span><span>${esc(c.category || "")}</span></div><div class="why">${esc(c.reason || "")}</div></div>
+        <div class="cap"><span class="no">${c.no}</span><div class="tt" title="${esc(c.title)}">${esc(c.title)}</div><div class="mt">${potBars(c.score)}<span class="at">${fmt(c.start)}</span>${heatTag(c.chat_heat)}<span>${esc(c.category || "")}</span></div><div class="why">${esc(c.reason || "")}</div></div>
         <div class="rgt"><span class="len">${fmt(c.end - c.start)}</span><button class="more" aria-label="Opciones del clip">${icon("more", 17)}</button></div>`;
       const go = () => location.hash = `#/p/${pid}/c/${c.id}`;
       $(".th", el).onclick = (e) => { if (e.ctrlKey || e.shiftKey || e.metaKey) pick(c.id); else go(); };
@@ -72,6 +72,7 @@ function project(pid) {
       $(".more", el).onclick = (e) => menu(e.currentTarget, [
         { label: "Editar", icon: "pen", run: go }, { head: "Exportar" }, ...QUALS.map(([k, h]) => ({ label: k === "mp3" ? "MP3" : k, hint: h, icon: "out", run: async () => { await exportClip(pid, c.id, k); toast("En la cola de exportación"); jobTick(); } })), "-",
         { label: "Publicar en YouTube", icon: "upload", run: () => ytPublish(pid, [c]) },
+        { label: "Ya lo subí a YouTube", hint: "Lo subí por mi cuenta", icon: "check", run: async () => { if (await ytManual({ pid, cid: c.id, title: c.title })) toast("Marcado como subido por ti"); } },
         { label: "Duplicar", icon: "copy", run: async () => { await api(`/api/projects/${pid}/clips/${c.id}/duplicate`, { method: "POST" }); tick(); } },
         { label: "Quitar clip", icon: "trash", bad: true, run: () => removeClips([c.id]) }]);
       box.appendChild(el);
@@ -130,19 +131,20 @@ function project(pid) {
       const has = DEF_LABELS.filter(([g]) => ["titulo", "subtitulos", "marca"].includes(g) && d[g]).map(([, l]) => l.toLowerCase()), el = $("#redo-def"), f = folderOf(p.folder);
       if (el) el.textContent = has.length ? `Los clips nuevos saldrán con tus predeterminados${f ? ` de «${f.name}»` : ""}: ${andList(has)}.` : "No hay titular, subtítulos ni marca predeterminados: saldrán los de fábrica.";
     }).catch(() => {});
-    rMode.value = o.mode || "auto"; rStyle.value = o.style || "karaoke"; $("#r-n").value = o.max_clips || 10; $("#r-min").value = o.min_len || 20; $("#r-max").value = o.max_len || 60; $("#r-silence").checked = !!o.remove_silence; $("#r-err").textContent = "";
+    rMode.value = o.mode || "auto"; rStyle.value = o.style || "karaoke"; $("#r-n").value = o.max_clips || 10; $("#r-min").value = o.min_len || 20; $("#r-max").value = o.max_len || 60; $("#r-silence").checked = !!o.remove_silence; $("#r-chatbox").hidden = !p.chat; $("#r-chat").checked = o.chat_guide !== false; $("#r-err").textContent = "";
     $("#r-cancel").onclick = () => $("#redo").close();
     $("#r-go").onclick = async () => {
       const mn = +$("#r-min").value, mx = +$("#r-max").value, n = +$("#r-n").value, err = $("#r-err");
       if (!(n >= 1 && n <= 40)) return err.textContent = "La cantidad de clips va de 1 a 40.";
       if (!(mn >= 5 && mx > mn && mx <= 180)) return err.textContent = "Revisa la duración: el mínimo debe ser menor que el máximo (5 a 180 s).";
-      try { await api(`/api/projects/${pid}/reanalyze`, { method: "POST", json: { only_select: onlySelect, mode: rMode.value, style: rStyle.value, max_clips: n, min_len: mn, max_len: mx, remove_silence: $("#r-silence").checked } }); $("#redo").close(); sig = ""; tick(); }
+      try { await api(`/api/projects/${pid}/reanalyze`, { method: "POST", json: { only_select: onlySelect, mode: rMode.value, style: rStyle.value, max_clips: n, min_len: mn, max_len: mx, remove_silence: $("#r-silence").checked, ...(p.chat ? { chat_guide: $("#r-chat").checked } : {}) } }); $("#redo").close(); sig = ""; tick(); }
       catch (e) { err.textContent = e.message; }
     };
     $("#redo").showModal();
   };
   $("#pmore").onclick = (e) => menu(e.currentTarget, [
     { label: "Volver a elegir momentos", hint: "Con la transcripción que ya existe", icon: "redo", run: () => openRedo(true) },
-    { label: "Analizar de cero", hint: "Transcripción, imagen y momentos", icon: "layers", run: () => openRedo(false) }, "-",
-    { label: "Borrar proyecto", icon: "trash", bad: true, run: async () => { if (await ask({ title: "¿Borrar este proyecto?", text: `Se borran «${P.name}», sus clips y todos sus archivos. No se puede deshacer.`, ok: "Borrar proyecto", danger: true })) { await api(`/api/projects/${pid}`, { method: "DELETE" }); location.hash = "#/"; } } }]);
+    { label: "Analizar de cero", hint: "Transcripción, imagen y momentos", icon: "layers", run: () => openRedo(false) },
+    ...(P && P.clips && P.clips.length ? [{ label: "Usar predeterminados de una carpeta…", hint: "Cambia el estilo de los clips que ya existen", icon: "pin", run: guard(async () => { if (await useDefs({ pid, folder: P.folder, n: P.clips.length })) sig = ""; }) }] : []), "-",
+    { label: "Borrar proyecto", icon: "trash", bad: true, run: async () => { if (await ask({ title: "¿Borrar este proyecto?", text: `Se borran «${P.name}», sus clips y todos sus archivos. No se puede deshacer.`, ok: "Borrar proyecto", danger: true })) { spDeleted(await api(`/api/projects/${pid}`, { method: "DELETE" })); location.hash = "#/"; } } }]);
 }

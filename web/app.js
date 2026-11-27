@@ -21,6 +21,7 @@ async function route() {
     if (here === "f") return library(parts[1]);
     if (here === "cola") return cola();
     if (here === "descargas") return descargas();
+    if (here === "espacio") return espacio();
     if (here === "ajustes") return await ajustes();
     library();
   } catch (e) { view.className = ""; view.innerHTML = noOpen(e.message === "Not Found" ? "Ese clip ya no existe." : e.message); }
@@ -50,8 +51,36 @@ async function badge() {
     const [js, ps, lv, yt] = await Promise.all([api("/api/jobs"), api("/api/projects"), api("/api/directos"), api("/api/publicaciones")]);
     const n = lv.filter(liveOn).length + yt.filter(p => YT_ON.includes(p.status)).length + js.filter(j => ["en cola", "renderizando", "descargando"].includes(j.status) && !ytExports(yt, j)).length + ps.filter(isBusy).length, b = $("#qbadge");
     b.hidden = !n; b.textContent = n; document.title = (n ? `(${n}) ` : "") + (window.APP_NAME || "Clips");
+    cafeCheck(js);
   } catch (e) {}
 }
 badge(); setInterval(badge, 4000);
+
+// ------------------------------------------------------------ aviso de café: al terminar una exportación, pocas veces y sin estorbar
+let expRun = null;
+async function cafeCheck(js) {
+  if (!window.APP_DONATE) return;
+  const run = new Set(js.filter(j => j.kind === "export" && ["en cola", "renderizando"].includes(j.status)).map(j => j.id));
+  const ended = expRun && [...expRun].some(id => !run.has(id) && (js.find(j => j.id === id) || { status: "listo" }).status === "listo");
+  expRun = run;
+  if (!ended || $("#cafecard")) return;
+  try { const c = await api("/api/cafe"); if (c.due && !$("#cafecard")) cafeCard(c.n); } catch (e) {}
+}
+function cafeCard(n) {
+  const el = document.createElement("div"); el.id = "cafecard"; el.className = "cafecard"; el.setAttribute("role", "status");
+  el.innerHTML = `<button class="btn gh sq sm x" data-a="luego" aria-label="Cerrar">${icon("close", 14)}</button>
+    <b>${icon("coffee", 18)}<span>Llevas ${n} clips con ${esc(window.APP_NAME || "este programa")}</span></b>
+    <p>Es gratis y lo hago en mis ratos. Si te ahorra tiempo, invítame un café: me ayuda a seguir mejorándolo.</p>
+    <a class="next" href="#/ajustes/lo-que-viene" data-a="next">Ver lo que viene</a>
+    <div class="row"><a class="btn pri sm" href="${esc(window.APP_DONATE)}" target="_blank" rel="noopener noreferrer" data-a="cafe">Invitar un café</a><button class="btn sm" data-a="hecho">Ya lo hice</button><button class="btn gh sm" data-a="luego">Ahora no</button></div>`;
+  document.body.appendChild(el);
+  const say = (a) => api("/api/cafe", { method: "POST", json: { answer: a } }).catch(() => {});
+  say("visto");
+  $$("[data-a]", el).forEach(b => b.addEventListener("click", () => {
+    const a = b.dataset.a; if (a === "next") return;
+    el.remove(); if (a !== "luego") say(a);
+    if (a === "hecho") toast("¡Gracias de corazón!");
+  }));
+}
 sysBadge();
 route();

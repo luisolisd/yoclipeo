@@ -4,9 +4,10 @@ y el motor de exportación dibujen EXACTAMENTE lo mismo.
 Tiempos: "src" = segundos del video original; "out" = segundos del clip final
 (difieren si se quitan silencios).
 """
+import bisect
 import re
 
-from . import store, vision
+from . import chat, store, vision
 from .analyze import SOCIAL
 from .config import OUT_FPS, OUT_H, OUT_W
 
@@ -209,7 +210,65 @@ def _display(w, upper):
     return t.upper() if upper else t
 
 
+SHIFT = 10.0        # lo más que se mueven los subtítulos, en segundos
+
+
+def word_shift(clip, w):
+    """Cuánto se adelanta (−) o atrasa (+) una palabra: lo de todo el clip más lo suyo."""
+    out = 0.0
+    for v in (clip["edit"].get("sub_shift"), w.get("d")):
+        try:
+            v = float(v or 0)
+        except (TypeError, ValueError):
+            continue
+        out += v if abs(v) <= 3 * SHIFT else 0.0      # (descarta también NaN e infinito)
+    return round(max(-SHIFT, min(SHIFT, out)), 3)
+
+
+def _moved(pages, clip, dur):
+    """Mueve las frases sin cambiar cómo se parten ni su orden: ninguna rebasa a la anterior ni a la siguiente."""
+    offs = [word_shift(clip, pg[0]["src"]) for pg in pages]
+    if not any(offs):
+        return pages
+    nat = [pg[0]["s"] for pg in pages]
+    gap = [0.0]                                       # lo mínimo que se guarda entre frases seguidas, acumulado
+    for a, b in zip(nat, nat[1:]):
+        gap.append(gap[-1] + max(0.0, min(.1, b - a)))
+    common = word_shift(clip, {})
+    at, put = [], {}                                  # las que menos se mueven mandan; las demás caben entre ellas
+    for i in sorted(range(len(pages)), key=lambda i: abs(offs[i] - common)):
+        n = bisect.bisect(at, i)
+        s = nat[i] + offs[i]
+        if n < len(at):
+            s = min(s, put[at[n]] - (gap[at[n]] - gap[i]))
+        if n:
+            s = max(s, put[at[n - 1]] + gap[i] - gap[at[n - 1]])
+        at.insert(n, i)
+        put[i] = s
+    out = []
+    for i, pg in enumerate(pages):
+        s = put[i]
+        k = s - pg[0]["s"]
+        end = pg[-1]["e"] + k
+        if end <= 0.05 or s >= dur - 0.05:            # quedó fuera del clip
+            continue
+        out.append([{**w, "s": round(max(0.0, w["s"] + k), 3), "e": round(min(dur, max(0.0, w["e"] + k)), 3)} for w in pg])
+    return out
+
+
+def phrases(clip, segs):
+    """Las frases como se parten en pantalla: [[posición de cada palabra en clip["words"], …], …]."""
+    tmap = TimeMap(segs)
+    at = {id(w): n for n, w in enumerate(clip["words"])}
+    return [[at[id(w["src"])] for w in pg] for pg in _group(clip, tmap, clip["edit"].get("style") == "dinamico")]
+
+
 def build_pages(clip, tmap, dynamic):
+    pages = _moved(_group(clip, tmap, dynamic), clip, tmap.duration)
+    return _timed([[{k: v for k, v in w.items() if k != "src"} for w in pg] for pg in pages], dynamic)
+
+
+def _group(clip, tmap, dynamic):
     ed = clip["edit"]
     words = [w for w in sorted(clip["words"], key=lambda w: w["s"]) if w["w"].strip()]
     max_words = 3
@@ -220,7 +279,7 @@ def build_pages(clip, tmap, dynamic):
         if not disp:
             continue
         ow = {"w": disp, "s": round(tmap.to_out(w["s"]), 3), "e": round(tmap.to_out(w["e"]), 3),
-              "key": bool(w.get("key"))}
+              "key": bool(w.get("key")), "src": w}
         if dynamic and ow["key"]:
             if cur:
                 pages.append(cur)
@@ -237,6 +296,10 @@ def build_pages(clip, tmap, dynamic):
             cur, chars = [], 0
     if cur:
         pages.append(cur)
+    return pages
+
+
+def _timed(pages, dynamic):
     out = []
     for i, pg in enumerate(pages):
         s = pg[0]["s"]
@@ -280,6 +343,11 @@ def stickers(clip, tmap, ed):
     out = []
     y = ed.get("sub_y", 1250) - 270
 
+    def when(w):
+        k = word_shift(clip, w)
+        t = tmap.to_out(w["s"])
+        return min(max(0.0, t + k), max(0.0, tmap.duration - .5)) if k else t
+
     def free(t):
         return all(abs(t - o["s"]) > 0.8 for o in out)
 
@@ -288,7 +356,7 @@ def stickers(clip, tmap, ed):
             n = norm(w["w"])
             for net in SOCIAL:
                 if n == net or (net == "twitter" and n == "x" and False):
-                    t = tmap.to_out(w["s"])
+                    t = when(w)
                     if free(t):
                         out.append({"kind": "logo", "value": net, "s": round(t, 3), "e": round(t + 1.3, 3),
                                     "x": 540, "y": y, "size": 230})
@@ -297,7 +365,7 @@ def stickers(clip, tmap, ed):
             target = norm(pair.get("word", ""))
             for w in clip["words"]:
                 if target and norm(w["w"]) == target:
-                    t = tmap.to_out(w["s"])
+                    t = when(w)
                     if free(t):
                         out.append({"kind": "emoji", "value": pair["emoji"], "s": round(t, 3),
                                     "e": round(t + 1.2, 3), "x": 540, "y": y, "size": 210})
@@ -414,7 +482,7 @@ def build(pid, cid, edit_override=None):
     dynamic = ed.get("style") == "dinamico"
     pages = build_pages(clip, tmap, dynamic) if ed.get("subs_on", True) else []
     zooms = zoom_keys(pages, dur) if ed.get("zooms") else [[0, 1.0], [dur, 1.0]]
-    return {
+    pl = {
         "pid": pid, "cid": cid,
         "W": OUT_W, "H": OUT_H, "fps": OUT_FPS,
         "segments": segs, "duration": round(dur, 3),
@@ -432,6 +500,10 @@ def build(pid, cid, edit_override=None):
         "stickers": stickers(clip, tmap, ed),
         "sources": {"A": {"pid": pid, "w": W, "h": H, "proxy": f"/api/projects/{pid}/proxy"}, "B": srcB},
     }
+    ch = chat.build(p, clip, tmap)
+    if ch:      # sin chat el plan queda igual que antes: lo ya exportado sigue valiendo
+        pl["chat"] = ch
+    return pl
 
 
 def interp(keys, t):

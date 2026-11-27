@@ -1,4 +1,5 @@
 """Exportación de clips: compone fotograma a fotograma a partir del plan y codifica con ffmpeg."""
+import math
 import subprocess
 import threading
 import time
@@ -130,7 +131,61 @@ def compose(plan, t, frames, canvas):
     draw_overlays(plan, t, canvas)
 
 
+def chat_stack(ch, t):
+    """Los mensajes que se ven en el segundo t, del más nuevo al más viejo: [(mensaje, y, opacidad 0-8)]."""
+    out, y, gap, top = [], float(ch["y"]), round(ch["size"] * .22), ch["y"] - ch["h"]
+    for it in reversed([i for i in ch["items"] if i["s"] <= t and t - i["s"] < ch["life"]]):
+        k = min(1.0, max(0.0, (t - it["s"]) / 0.22))
+        k = 1 - (1 - k) ** 3
+        y += (1 - k) * (it["h"] + gap) - it["h"]
+        a = min(k, (ch["life"] - (t - it["s"])) / 0.4, 1 - max(0.0, top - y) / 24)
+        if y + it["h"] < top:
+            break
+        if a > .06:
+            out.append((it, int(round(y)), int(round(a * 8))))
+        y -= gap
+    return out
+
+
+def draw_chat(plan, t, canvas):
+    ch = plan.get("chat")
+    if not ch:
+        return
+    size, fr = ch["size"], int(t * ch["fps"])
+    for s, i, x, h, rot, ph in ch["parts"]:
+        k = (t - s) / ch["fly"]
+        if 0 <= k < 1:
+            pop = min(1.0, k / .06)
+            a = int(round(8 * min(1.0, (1 - k) / .3) * pop))
+            im = overlay.emote_img(i, fr, max(8, int(h * (.5 + .5 * pop))), rot, a) if a > 0 else None
+            if im is not None:
+                cy = ch["y"] - ch["rise"] * (1 - (1 - k) ** 1.6)
+                overlay.blend(canvas, im, int(round(x + math.sin(k * 6 + ph) * 16 - im.width / 2)), int(round(cy - im.height / 2)))
+    for it, y, a in chat_stack(ch, t):
+        x = ch["x"] + (ch["w"] - it["w"] if ch["right"] else 0)
+        overlay.blend(canvas, overlay.chat_bubble(it, size, ch["w"], a), x, y)
+    top = next((c for s, c in reversed(ch["counts"]) if s <= t), [])
+    boxes = []
+    for i, n, tw in top:
+        m = ch["emotes"].get(i)
+        if m:
+            eh = round(size * 1.15)
+            ew = min(round(eh * 2.2), round(eh * m["w"] / m["h"]))
+            boxes.append((i, n, tw, ew, eh, round(ew + tw + size * 1.15)))
+    gap = round(size * .28)
+    tot = sum(b[5] for b in boxes) + gap * (len(boxes) - 1)
+    x = max(0, min(1080 - tot, ch["x"] + (ch["w"] - tot if ch["right"] else 0)))
+    y = ch["y"] - (ch["h"] + gap if ch["items"] else 0) - round(size * 1.5)
+    for i, n, tw, ew, eh, w in boxes:
+        overlay.blend(canvas, overlay.chat_pill(n, size, ew, tw), x, y)
+        im = overlay.emote_img(i, fr, eh)
+        if im is not None:
+            overlay.blend(canvas, im, int(round(x + size * .4 + (ew - im.width) / 2)), int(round(y + (round(size * 1.5) - im.height) / 2)))
+        x += w + gap
+
+
 def draw_overlays(plan, t, canvas):
+    draw_chat(plan, t, canvas)
     ti = plan["title"]
     if ti["on"] and t <= ti["until"]:
         img = overlay.render_title(ti["text"], ti.get("font", "clasica"), ti.get("style", "caja"),

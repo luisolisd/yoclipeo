@@ -20,7 +20,9 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from cliper import actualizar, arranque, config, defaults, directo, equipo, jobs, plan, store, sync, youtube
+from starlette.concurrency import run_in_threadpool
+
+from cliper import actualizar, arranque, cafe, chat, config, defaults, directo, equipo, jobs, palabras, periodos, plan, store, sync, youtube, espacio
 from cliper.analyze import make_clip
 from cliper.transcribe import all_words
 
@@ -47,7 +49,8 @@ def ui_version():
 def app_name():
     return Response(f"window.APP_NAME = {json.dumps(config.APP_NAME)}; window.APP_VERSION = {json.dumps(config.VERSION)}; "
                     f"window.APP_AUTHOR = {json.dumps(config.AUTHOR)}; window.APP_NOTICE = {json.dumps(config.NOTICE)}; "
-                    f"window.APP_DONATE = {json.dumps(config.DONATE_URL if config.DONATE_URL.startswith('https://') else '')};", media_type="text/javascript")
+                    f"window.APP_DONATE = {json.dumps(config.DONATE_URL if config.DONATE_URL.startswith('https://') else '')}; "
+                    f"window.APP_ROADMAP = {json.dumps([x for x in config.ROADMAP if isinstance(x, str)], ensure_ascii=False)};", media_type="text/javascript")
 
 
 def _p(pid):
@@ -64,6 +67,7 @@ def _public(p, full=True):
     q["marks"] = [{"id": c["id"], "t": c.get("title", ""), "s": round(c["start"], 1), "e": round(c["end"], 1), "score": c.get("score", 0),
                    "v": c.get("thumb_v", 0)} for c in p.get("clips", [])]
     q["n_exports"] = sum(1 for c in p.get("clips", []) if c.get("exports"))
+    q["chat"] = bool(chat.source(p))
     if full:
         q["clips"] = [{k: v for k, v in c.items() if k != "words"} | {"n_words": len(c.get("words", []))}
                       for c in p.get("clips", [])]
@@ -191,6 +195,17 @@ def _from_here(request):
         raise HTTPException(403, "No permitido")
 
 
+@app.get("/api/cafe")
+def cafe_status():
+    """Cuántos clips van y si toca el aviso de café."""
+    return cafe.status()
+
+
+@app.post("/api/cafe")
+def cafe_answer(request: Request, body: dict):
+    return _yt(request, cafe.answer, body.get("answer"))
+
+
 @app.get("/api/update")
 def update_status():
     return actualizar.status()
@@ -285,6 +300,16 @@ def pub_add(request: Request, body: dict):
     return _yt(request, youtube.add, body)
 
 
+@app.post("/api/publicaciones/manual")
+def pub_mark_clip(request: Request, body: dict):
+    return _yt(request, lambda: youtube.mark(pid=str(body.get("pid") or ""), cid=str(body.get("cid") or ""), link=body.get("link")))
+
+
+@app.post("/api/publicaciones/{i}/manual")
+def pub_mark(request: Request, i: str, body: dict):
+    return _yt(request, lambda: youtube.mark(i=i, link=body.get("link")))
+
+
 @app.post("/api/publicaciones/{i}/portada")
 def pub_cover(request: Request, i: str, body: dict):
     _yt(request, youtube.set_cover, i, body.get("t"))
@@ -293,7 +318,7 @@ def pub_cover(request: Request, i: str, body: dict):
 
 @app.post("/api/publicaciones/{i}/{what}")
 def pub_do(request: Request, i: str, what: str):
-    fn = {"reintentar": youtube.retry, "cancelar": youtube.cancel, "quitar": youtube.forget, "lista": youtube.relist}.get(what)
+    fn = {"reintentar": youtube.retry, "cancelar": youtube.cancel, "quitar": youtube.forget, "lista": youtube.relist, "deshacer": youtube.unmark}.get(what)
     if not fn:
         raise HTTPException(404)
     _yt(request, fn, i)
@@ -347,10 +372,18 @@ async def create_project(file: UploadFile | None = File(None), url: str = Form("
         for p in ps:
             jobs.enqueue_project(p["id"])
         return {"n": len(ps), "serie": serie["id"] if serie else None, **(_public(ps[0]) if ps else {})}
+    src = {"url": url.strip() or None, "file": None}
+    if opts.get("periods") and src["url"] and not (file is not None and file.filename) and not opts.get("local_path"):
+        try:
+            ps = await run_in_threadpool(periodos.ask, src["url"], opts["periods"], opts.get("download", "auto"))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if ps:
+            src["periods"] = ps
+    opts.pop("periods", None)
     pid = store.new_id()
     d = store.pdir(pid)
     (d / "src").mkdir(parents=True, exist_ok=True)
-    src = {"url": url.strip() or None, "file": None}
     name = opts.get("name") or ""
     if file is not None and file.filename:
         dest = d / "src" / ("source" + Path(file.filename).suffix.lower())
@@ -408,7 +441,21 @@ def stop_recording(pid: str):
 
 @app.get("/api/directo")
 def check_live(url: str):
-    return directo.inspect(url.strip())
+    r = directo.inspect(url.strip())
+    if not r.get("live") and chat.VOD.match(url.strip()):
+        try:
+            r["vod"] = periodos.info(url.strip())
+        except (ValueError, OSError):
+            pass
+    return r
+
+
+@app.get("/api/kick/cuadro")
+def kick_frame(url: str, t: float):
+    try:
+        return Response(periodos.frame(url.strip(), t), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+    except Exception:
+        raise HTTPException(404, "No hay imagen")
 
 
 @app.get("/api/directos")
@@ -502,8 +549,7 @@ def del_folder(fid: str):
 @app.delete("/api/projects/{pid}")
 def delete_project(pid: str):
     _p(pid)
-    store.delete(pid)
-    return {"ok": True}
+    return {"ok": True, "pending": store.delete(pid)}
 
 
 @app.post("/api/projects/{pid}/reanalyze")
@@ -511,7 +557,7 @@ def reanalyze(pid: str, body: dict | None = None):
     _p(pid)
     body = dict(body or {})
     only_select = bool(body.pop("only_select", False))
-    allowed = {"mode", "style", "max_clips", "min_len", "max_len", "remove_silence", "language", "whole"}
+    allowed = {"mode", "style", "max_clips", "min_len", "max_len", "remove_silence", "language", "whole", "chat_guide"}
     body = {k: v for k, v in body.items() if k in allowed}
     if body:
         store.update(pid, lambda q: q["options"].update(body))
@@ -609,6 +655,25 @@ def update_clip(pid: str, cid: str, body: dict):
     return cc
 
 
+@app.post("/api/projects/{pid}/clips/{cid}/palabras")
+def words_look(request: Request, pid: str, cid: str, body: dict):
+    return _yt(request, palabras.look, pid, cid, body.get("find"))
+
+
+@app.put("/api/projects/{pid}/clips/{cid}/palabras")
+def words_replace(request: Request, pid: str, cid: str, body: dict):
+    r = _yt(request, palabras.replace, pid, cid, body.get("find"), body.get("to"), bool(body.get("all")))
+    _regen_thumbs(pid, list(r["done"]["clips"]))
+    return r
+
+
+@app.put("/api/projects/{pid}/palabras/deshacer")
+def words_undo(request: Request, pid: str, body: dict):
+    r = _yt(request, palabras.undo, pid, body.get("done"))
+    _regen_thumbs(pid, r["clips"])
+    return r
+
+
 @app.post("/api/projects/{pid}/clips")
 def new_clip(pid: str, body: dict):
     p = _p(pid)
@@ -646,9 +711,34 @@ def del_clip(pid: str, cid: str):
 @app.post("/api/projects/{pid}/clips/{cid}/plan")
 def get_plan(pid: str, cid: str, body: dict | None = None):
     try:
-        return plan.build(pid, cid, (body or {}).get("edit"))
+        pl = plan.build(pid, cid, (body or {}).get("edit"))
+        c = store.find_clip(_p(pid), cid)
+        return {**pl, "phrases": plan.phrases(c, pl["segments"]) if c else []}      # solo para el editor: no va en lo exportado
     except KeyError:
         raise HTTPException(404)
+
+
+@app.post("/api/projects/{pid}/clips/{cid}/chat")
+def read_chat(request: Request, pid: str, cid: str):
+    """Lee de Kick el chat que hubo durante este clip."""
+    n = _yt(request, chat.ensure, pid, cid)
+    jobs.schedule_thumb(pid, cid)
+    return {"n": n}
+
+
+@app.get("/api/chat/estado")
+def chat_state():
+    return {"wait": chat.waiting()}
+
+
+@app.get("/api/chat/palabras")
+def chat_words():
+    return chat.blocked()
+
+
+@app.put("/api/chat/palabras")
+def chat_words_save(request: Request, body: dict):
+    return _yt(request, lambda: chat.set_blocked(list(body["words"]) if isinstance(body.get("words"), list) else []))
 
 
 @app.post("/api/projects/{pid}/clips/{cid}/auto-streamer")
@@ -685,16 +775,74 @@ def get_export(pid: str, name: str):
     return FileResponse(f, filename=name)
 
 
-@app.post("/api/projects/{pid}/open-folder")
-def open_folder(pid: str):
+def _show(d, name=""):
+    """Abre la carpeta en esta PC, con el archivo seleccionado si sigue ahí."""
     import os
-    d = store.pdir(pid) / "exportados"
+    import subprocess
     d.mkdir(exist_ok=True)
+    f = (d / name).resolve() if name else None
+    if f and f.parent == d.resolve() and f.is_file():
+        subprocess.Popen(f'explorer /select,"{f}"')
+        return {"ok": True, "found": True}
     os.startfile(d)
-    return {"ok": True}
+    return {"ok": True, "found": False}
+
+
+@app.post("/api/projects/{pid}/open-folder")
+def open_folder(request: Request, pid: str, body: dict | None = None):
+    _from_here(request)
+    _p(pid)
+    return _show(store.pdir(pid) / "exportados", str((body or {}).get("file") or ""))
+
+
+@app.post("/api/downloads/open-folder")
+def open_downloads(request: Request, body: dict | None = None):
+    _from_here(request)
+    return _show(config.DOWNLOADS, str((body or {}).get("file") or ""))
 
 
 # ------------------------------------------------------------ trabajos y descargas
+
+@app.get("/api/espacio")
+def space():
+    return espacio.report()
+
+
+@app.get("/api/espacio/restos")
+def space_left():
+    return espacio.leftovers()
+
+
+@app.post("/api/espacio/restos/{pid}")
+def space_wipe(request: Request, pid: str):
+    return _yt(request, espacio.wipe, pid)
+
+
+@app.post("/api/espacio/exportados/{pid}")
+def space_exports(request: Request, pid: str):
+    return _yt(request, espacio.clear_exports, pid)
+
+
+@app.post("/api/espacio/descarga")
+def space_download(request: Request, body: dict):
+    return _yt(request, espacio.drop_download, str(body.get("file") or ""))
+
+
+@app.post("/api/espacio/carpeta/{pid}")
+def space_folder(request: Request, pid: str):
+    _from_here(request)
+    d = config.PROJECTS / pid
+    if not espacio.PID.fullmatch(pid) or not d.is_dir():
+        raise HTTPException(404, "Esa carpeta ya no existe")
+    return _show(d)
+
+
+@app.post("/api/cola/limpiar")
+def clear_queue(request: Request, body: dict):
+    _from_here(request)
+    ids = {k: {str(i) for i in body.get(k) or []} for k in ("jobs", "pubs")}
+    return {"left": jobs.tidy(ids["jobs"]) + youtube.tidy(ids["pubs"])}
+
 
 @app.get("/api/jobs")
 def list_jobs():
@@ -711,8 +859,7 @@ def new_download(body: dict):
 
 @app.get("/api/downloads")
 def downloads():
-    idx = config.DOWNLOADS / "index.json"
-    return json.loads(idx.read_text(encoding="utf-8")) if idx.exists() else []
+    return jobs.downloads()
 
 
 @app.get("/api/downloads/file/{name}")
@@ -846,6 +993,18 @@ def set_defaults(body: dict):
     return get_defaults()
 
 
+@app.post("/api/defaults/copiar")
+def copy_defaults(request: Request, body: dict):
+    """Copia predeterminados de una carpeta (o de los generales) a otra."""
+    ids = [f["id"] for f in _folders()]
+    src, dst = body.get("from") or None, body.get("to") or None
+    if any(x and x not in ids for x in (src, dst)):
+        raise HTTPException(400, "Esa carpeta ya no existe.")
+    groups = body.get("groups")
+    _yt(request, defaults.copy, src, dst, [g for g in groups if isinstance(g, str)] if isinstance(groups, list) else [])
+    return get_defaults()
+
+
 @app.delete("/api/defaults")
 def remove_defaults(folder: str = "", group: str = ""):
     """Quita un grupo (o todos, si no se dice cuál) de una carpeta o de los generales."""
@@ -871,12 +1030,43 @@ def use_defaults(pid: str, cid: str):
     return store.find_clip(q, cid)
 
 
+@app.post("/api/projects/{pid}/use-defaults")
+def use_defaults_in(request: Request, pid: str, body: dict):
+    """Pone los predeterminados de una carpeta cualquiera (o los generales) en un clip o en todos los del proyecto."""
+    from cliper import vision
+    _from_here(request)
+    p = _p(pid)
+    folder, cid, groups = body.get("folder") or None, body.get("clip") or None, body.get("groups")
+    if folder and folder not in [f["id"] for f in _folders()]:
+        raise HTTPException(400, "Esa carpeta ya no existe.")
+    r = defaults.resolve(folder)
+    groups = [g for g in defaults.EDITOR_GROUPS if g in r and isinstance(groups, list) and g in groups]
+    if not groups:
+        raise HTTPException(400, "Marca al menos una opción.")
+    ids = [c["id"] for c in p.get("clips", []) if not cid or c["id"] == cid]
+    if not ids:
+        raise HTTPException(400, "Ese clip ya no existe." if cid else "Este proyecto todavía no tiene clips.")
+    vp = store.pdir(pid) / "vision.json"
+    vis = vision.load(vp) if vp.exists() else None
+
+    def f(q):
+        for c in q["clips"]:
+            if c["id"] in ids:
+                defaults.dress_existing(c, folder, vis, groups)
+    store.update(pid, f)
+    if "chat" in groups and r["chat"].get("chat_on") and chat.source(p):
+        chat.ensure_many(pid, ids, lambda c: jobs.schedule_thumb(pid, c))
+    _regen_thumbs(pid, ids)
+    return {"n": len(ids)}
+
+
 APPLY_GROUPS = {
     "encuadre": ("layout", "framing", "manual_x", "streamer", "split"),
     "subtitulos": ("style", "font", "color", "subs_on", "sub_y", "sub_size", "upper"),
     "titulo": ("title_on", "title_secs", "title_style", "title_font", "title_color", "title_size", "title_y"),
     "dinamico": ("zooms", "emojis_on", "logos_on", "remove_silence", "filter"),
     "marca": ("brand",),
+    "chat": defaults.GROUPS["chat"],
 }
 
 
@@ -900,6 +1090,8 @@ def apply_all(pid: str, cid: str, body: dict):
                 c["edit"].update(json.loads(json.dumps(vals)))
                 changed.append(c["id"])
     store.update(pid, f)
+    if "chat" in body["groups"] and vals.get("chat_on") and chat.source(p):
+        chat.ensure_many(pid, changed, lambda c: jobs.schedule_thumb(pid, c))
     _regen_thumbs(pid, changed)
     return {"ok": True, "n": len(changed)}
 
@@ -921,6 +1113,20 @@ def brand_all(pid: str, body: dict):
     ids = [c["id"] for c in store.load(pid)["clips"]]
     _regen_thumbs(pid, ids)
     return {"ok": True, "n": len(ids)}
+
+
+@app.get("/api/img/chat")
+def img_chat(x: str, u: str = "", c: str = "", s: int = 38, w: int = 680):
+    from cliper import overlay
+    return _png(overlay.chat_img(u[:40], c[:7], x[:400], max(20, min(64, s)), max(200, min(1000, w))))
+
+
+@app.get("/api/img/emote/{i}")
+def img_emote(i: str):
+    f = chat.strip(i)
+    if not f or not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
 @app.get("/api/img/emoji")

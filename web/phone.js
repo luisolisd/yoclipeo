@@ -42,6 +42,7 @@ function phoneItems(pv) {                      // lo que el clip pone encima del
   const p = pv.plan, out = [];
   if (p.title.on && p.title.text) { const b = opaqueBox(CliperPreview.titleUrl(p.title)); if (b && b.w) out.push({ id: "title", x: b.x, y: p.title.y + b.y, w: b.w, h: b.h }); }
   if (p.subs.on) for (const g of p.subs.pages) { const b = pv.pageBox(g, p.subs); if (b.w) out.push({ id: "subs", ...b }); }
+  if (p.chat && (p.chat.items.length || p.chat.parts.length)) { const c = p.chat, f = c.mode === "emotes", w = f ? 250 : Math.max(...c.items.map(i => i.w)), h = f ? c.rise : c.h; out.push({ id: "chat", x: f ? (c.right ? c.x + c.w - 250 : c.x) : c.x + (c.right ? c.w - w : 0), y: c.y - h, w, h }); }
   for (const b of p.brand || []) out.push({ id: "brand", x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h });
   for (const s of p.stickers || []) out.push({ id: "stick", x: s.x - s.size / 2, y: s.y - s.size / 2, w: s.size, h: s.size });
   return out;
@@ -60,7 +61,7 @@ function phoneHits(items, phone, app) {
 }
 
 const PHONE_SAY = { bar: ["La hora y la batería", "tapan"], menu: ["El menú de arriba", "tapa"], col: ["Los botones", "tapan parte de"], text: ["El nombre y la descripción", "tapan"] };
-const PHONE_IT = { title: "el titular", subs: "los subtítulos", brand: "un sticker", stick: "un emoji o logo" };
+const PHONE_IT = { title: "el titular", subs: "los subtítulos", chat: "el chat", brand: "un sticker", stick: "un emoji o logo" };
 function phoneText(hits, P) {
   const out = [];
   for (const it of Object.keys(PHONE_IT)) {

@@ -44,6 +44,8 @@ CATEGORIES = {"24": "Entretenimiento", "22": "Gente y blogs", "23": "Comedia", "
               "25": "Noticias y política", "27": "Educación", "28": "Ciencia y tecnología", "1": "Cine y animación", "19": "Viajes"}
 NET = (urllib.error.URLError, OSError, http.client.HTTPException)
 ACTIVE = ("en cola", "exportando", "subiendo")
+MANUAL = "a mano"                        # la persona lo subió por su cuenta
+LINK = re.compile(r"(?:https?://)?(?:(?:www\.|m\.|music\.)?youtube\.com/(?:watch\?(?:[^#\s]*&)?v=|shorts/|live/)|youtu\.be/|studio\.youtube\.com/video/)([\w-]{11})(?![\w-])", re.I | re.A)
 LIMITS = ("uploadLimitExceeded", "quotaExceeded")      # no es un fallo: se espera y se sigue solo
 
 
@@ -369,7 +371,7 @@ def listing(pid="", cid=""):
 
 def first():
     """¿Es la primera? La ventana sugiere subirla en privado."""
-    return not any(p.get("video") for p in pubs())
+    return not any(p.get("video") and p["status"] != MANUAL for p in pubs())
 
 
 def active():
@@ -486,7 +488,7 @@ def add(body):
             raise ValueError("Elige quién puede verlo.")
         if when and privacy != "private":
             raise ValueError("Un video programado se sube en privado hasta su hora.")
-        if not it.get("again") and any(x["pid"] == p["id"] and x["cid"] == c["id"] and (x.get("video") or x["status"] in (*ACTIVE, "pausada")) for x in old + new):
+        if not it.get("again") and any(x["pid"] == p["id"] and x["cid"] == c["id"] and (x.get("video") or x["status"] in (*ACTIVE, "pausada", MANUAL)) for x in old + new):
             raise ValueError("Ese clip ya se subió o se está subiendo" + tag + ".")
         new.append({"id": store.new_id(10), "cover": _moment(it.get("cover")), "pid": p["id"], "cid": c["id"], "channel": st["channel"], "title": title, "description": desc, "tags": _tags(it.get("tags")),
                     "privacy": privacy, "publish_at": when, "kids": body["kids"], "category": cat, "notify": body.get("notify") is not False,
@@ -524,7 +526,7 @@ def retry(i):
 
 
 def _again(i):
-    _set(i, status="en cola", progress=0, error="", stop=False, held=False)
+    _set(i, status="en cola", progress=0, error="", stop=False, held=False, cleared=False)
     _push(i)
 
 
@@ -571,11 +573,88 @@ def forget(i):
         p = _one(i)
         if not p or p["status"] in (*ACTIVE, "pausada"):
             raise ValueError("Primero cancélala.")
-        if p.get("video"):
+        if p.get("video") or p["status"] == MANUAL:
             _set(i, hidden=True)       # se conserva para no subir dos veces el mismo clip sin avisar
         else:
             _write(PUBS, [x for x in pubs() if x["id"] != i])
     (TMP / f"{i}.mp4").unlink(missing_ok=True)
+
+
+def tidy(ids):
+    """Deja de mostrar en la Cola lo que ya acabó. Sigue anotado en su clip; lo que falta o falló, se queda (y se cuenta)."""
+    n = left = 0
+    with _lock:
+        ps = pubs()
+        for p in ps:
+            if p["id"] in ids and not p.get("cleared") and (
+                    p["status"] in ("cancelada", MANUAL) or p["status"] == "lista" and p.get("video") and
+                    not {p.get("listed"), p.get("cover_state")} & {"pendiente", "no"}):
+                p["cleared"] = True
+                n += 1
+            elif p["id"] in ids and not p.get("cleared"):
+                left += 1
+        if n:
+            _write(PUBS, ps)
+    return left
+
+
+def _video(link):
+    link = str(link or "").strip()
+    m = LINK.match(link)
+    if link and not m:
+        raise ValueError("Ese no es el enlace de un video de YouTube.")
+    return m[1] if m else ""
+
+
+def mark(i="", pid="", cid="", link=""):
+    """La persona ya subió este clip por su cuenta: deja de esperar y queda anotado. Con i, esa publicación."""
+    vid = _video(link)
+    pr = None if i else store.load(str(pid))
+    c = store.find_clip(pr, cid) if pr else None
+    with _lock:
+        ps = pubs()
+        p = next((x for x in ps if x["id"] == i), None)
+        if i and not p or not i and not c:
+            raise ValueError("Esa publicación ya no existe." if i else "Ese clip ya no existe.")
+        if p and p["status"] == MANUAL:      # solo cambia el enlace
+            p["video"] = vid
+        else:
+            same = [x for x in ps if (x["pid"], x["cid"]) == ((p["pid"], p["cid"]) if p else (pr["id"], cid))]
+            if any(x["status"] in ("exportando", "subiendo") for x in same):
+                raise ValueError("Este clip se está subiendo a YouTube. Cancela primero esa subida.")
+            if any(x.get("video") or x["status"] == MANUAL for x in same):
+                raise ValueError("Este clip ya estaba como subido.")
+            p = p or next((x for x in reversed(same) if x["status"] in ("en cola", "pausada", "error", "cancelada")), None)
+            if p:
+                p["was"] = p["status"]
+            else:
+                p = {"id": store.new_id(10), "pid": pr["id"], "cid": cid, "channel": None, "title": str(c.get("title") or "")[:100], "description": "", "tags": [], "privacy": "", "publish_at": "",
+                     "playlist": {}, "listed": "", "lot": "", "at": float(c.get("start") or 0), "created": time.time(), "sent": 0}
+                ps.append(p)
+            for x in same:                   # si había otra copia del mismo clip esperando, tampoco sube
+                if x is not p and x["status"] in ("en cola", "pausada"):
+                    x.update(status="cancelada", stop=True)
+            p.update(status=MANUAL, video=vid, error="", stop=True, held=False, session="", sent=0, progress=100, marked=time.time(), hidden=False, cleared=False)
+        _write(PUBS, ps)
+    _quiet((TMP / f"{p['id']}.mp4").unlink)
+    return public(p)
+
+
+def unmark(i):
+    with _lock:
+        ps = pubs()
+        p = next((x for x in ps if x["id"] == i), None)
+        if not p or p["status"] != MANUAL:
+            raise ValueError("No hay nada que deshacer.")
+        was = p.pop("was", "")
+        if not was:
+            ps.remove(p)
+        else:                                # si su hora ya pasó no se sube de golpe: queda cancelada, con «Reintentar»
+            wait = was == "pausada" and p.get("resume_at", 0) > time.time() + 60
+            p.update(status="pausada" if wait else "cancelada", video="", stop=not wait, progress=0)
+            p.pop("marked", None)
+            p.pop("cleared", None)
+        _write(PUBS, ps)
 
 
 def _check_stop(i):
@@ -597,10 +676,14 @@ def _export(p):
     c = store.find_clip(pr, p["cid"]) if pr else None
     if not c or sig is None:
         raise YTError("El clip ya no existe.")
-    for x in c.get("exports", []):
-        if x["quality"] == "1080p" and x.get("sig") == sig:
-            f = store.pdir(p["pid"]) / "exportados" / x["file"]
-            rec = x["file"] if f.exists() and f.stat().st_size == x["size"] else rec
+    def ready():
+        c2, r = store.find_clip(store.load(p["pid"]) or {}, p["cid"]) or {}, None
+        for x in c2.get("exports", []):
+            if x["quality"] == "1080p" and x.get("sig") == sig:
+                f = store.pdir(p["pid"]) / "exportados" / x["file"]
+                r = x["file"] if f.exists() and f.stat().st_size == x["size"] else r
+        return r
+    rec = ready()
     mine = lambda x: x["kind"] == "export" and (x["pid"], x["cid"], x["quality"]) == (p["pid"], p["cid"], "1080p")
     run = next((x["id"] for x in jobs.list_jobs() if mine(x) and x["status"] in ("en cola", "renderizando")), "")
     if run or not rec:                   # si ya se está exportando, se espera a esa
@@ -608,6 +691,10 @@ def _export(p):
         while True:
             _check_stop(p["id"])
             k = next((x for x in jobs.list_jobs() if x["id"] == run), None)
+            if not k:
+                rec = ready()
+                if rec:
+                    break
             if not k or k["status"] == "error":
                 raise YTError("No se pudo exportar: " + (k or {}).get("error", "")[:200])
             if k["status"] == "listo":
@@ -737,7 +824,7 @@ def _run(i):
         _quiet(f.unlink)                 # si no se puede ahora, se borra al volver a abrir
         _to_list(i)
     except Stopped:
-        _set(i, status="cancelada", session="", sent=0)
+        _set(i, status=MANUAL if (_one(i) or {}).get("was") else "cancelada", session="", sent=0)
         _quiet((TMP / f"{i}.mp4").unlink)
     except Exception as e:
         if not isinstance(e, YTError):

@@ -7,23 +7,38 @@ function cola() {
   let sig = "", upOpen = false;
   every(1000, async () => {
     let js, ps, lv, yt; try { [js, ps, lv, yt] = await Promise.all([api("/api/jobs"), api("/api/projects"), api("/api/directos"), api("/api/publicaciones")]); } catch (e) { return; }
-    yt = yt.filter(p => !p.hidden);
+    yt = yt.filter(p => !p.hidden && !p.cleared);
     lv = lv.filter(liveOn); const box = $("#qbox"); if (!box) return;
     const s = JSON.stringify([js, ytSig(yt), lv.map(liveText), ps.map(p => [p.id, p.status, p.progress, p.message])]); if (s === sig) return; sig = s;
-    const ytUp = yt.filter(p => p.video && p.status !== "error"), ytGo = yt.filter(p => !ytUp.includes(p)).sort((a, b) => a.created - b.created);      // lo ya subido, aparte
+    const ytUp = yt.filter(p => ytUploaded(p) && p.status !== "error"), ytNo = yt.filter(p => p.status === "cancelada"), ytGo = yt.filter(p => !ytUp.includes(p) && !ytNo.includes(p)).sort((a, b) => a.created - b.created);      // lo ya subido, aparte
     const P = Object.fromEntries(ps.map(p => [p.id, p])), running = js.filter(j => ["en cola", "renderizando", "descargando"].includes(j.status)).filter(j => !ytExports(yt, j)).sort((a, b) => a.created - b.created), bad = js.filter(j => j.status === "error"), done = js.filter(j => j.status === "listo"), waits = ps.filter(isWait), busy = ps.filter(p => isBusy(p) && !isWait(p));
     const clipOf = (j) => ((P[j.pid] || {}).marks || []).find(m => m.id === j.cid), what = (j) => j.kind === "download" ? (j.title || j.url) : (clipOf(j) || {}).t || "Clip borrado", from = (j) => j.kind === "export" && P[j.pid] ? `, ${P[j.pid].name}` : "";
     const th = (j) => j.kind === "export" ? `<i style="flex:none;width:27px;height:48px;border-radius:2px;background:var(--well) url('/api/projects/${j.pid}/thumb/${j.cid}') center/cover"></i>` : `<span style="width:27px;display:grid;place-items:center;color:var(--mut)">${icon("download", 18)}</span>`;
     const tag = (j) => j.kind === "download" ? (j.format === "mp3" ? "Descarga MP3" : "Descarga de video") : `Exportación ${j.quality}`;
+    const clr = (k) => `<button type="button" class="lnk" data-clear="${k}">Limpiar</button>`, bh = (t, k) => `<div class="bh"><h2>${t}</h2>${clr(k)}</div>`;
     box.innerHTML =
       (busy.length ? `<section class="block"><h2>Analizando</h2>${busy.map(p => `<a class="proc" style="display:block;color:inherit;text-decoration:none" href="#/p/${p.id}"><div class="ms">${esc(p.name)}<span>${Math.round(p.progress || 0)}%</span></div>${stagesHtml(p)}<div class="mut small" style="margin-top:10px">${esc(p.message || "")}</div></a>`).join("")}</section>` : "") +
       (lv.length || waits.length ? `<section class="block"><h2>Directos que sigues</h2>${waits.map(p => `<a class="liveb activo" style="color:inherit;text-decoration:none" href="#/p/${p.id}"><i></i><div><b>${esc(p.name)}</b><span>${esc(p.message || "")}</span></div></a>`).join("")}${lv.map(s => `<a class="liveb ${s.status}" style="color:inherit;text-decoration:none" href="#/"><i></i><div><b>${esc(s.base)}</b><span>${esc(liveText(s))}</span></div></a>`).join("")}</section>` : "") +
       (running.length ? `<section class="block"><h2>En marcha</h2><div class="files">${running.map(j => `<div class="file">${th(j)}<span class="n">${esc(what(j))}<small>${tag(j)}${j.status === "en cola" ? ", en espera" : j.fps ? `, ${j.fps} fps` : ""}${esc(from(j))}</small><div class="line" style="margin-top:6px"><i style="width:${j.progress}%"></i></div></span><span class="num">${Math.round(j.progress)}%</span></div>`).join("")}</div></section>` : "") +
       (ytGo.length ? `<section class="block"><h2>YouTube: por subir</h2><div class="files" data-qyt>${ytRows(ytGo)}</div></section>` : "") +
-      (bad.length ? `<section class="block"><h2>Con error</h2><div class="files">${bad.map(j => `<div class="file">${th(j)}<span class="n" style="white-space:normal">${esc(what(j))}<small>${tag(j)}</small><span class="err">${esc((j.error || "").slice(0, 400))}</span></span></div>`).join("")}</div></section>` : "") +
-      (done.length ? `<section class="block"><h2>Terminado en esta sesión</h2><div class="files">${done.map(j => `<div class="file">${th(j)}<span class="n">${esc(j.file)}<small>${tag(j)}${esc(from(j))}</small></span><a class="btn sm" href="${j.kind === "download" ? `/api/downloads/file/${encodeURIComponent(j.file)}` : `/api/projects/${j.pid}/files/${encodeURIComponent(j.file)}`}" download>${icon("download", 15)}Guardar</a></div>`).join("")}</div></section>` : "") +
-      (ytUp.length ? `<section class="block"><details class="qup"${upOpen ? " open" : ""}><summary><h2>Ya en YouTube (${ytUp.length})</h2></summary><div class="files" data-qyt>${ytRows(ytUp)}</div></details></section>` : "") ||
+      (ytNo.length ? `<section class="block">${bh("YouTube: canceladas", "no")}<div class="files" data-qyt>${ytRows(ytNo)}</div></section>` : "") +
+      (bad.length ? `<section class="block">${bh("Con error", "bad")}<div class="files">${bad.map(j => `<div class="file">${th(j)}<span class="n" style="white-space:normal">${esc(what(j))}<small>${tag(j)}</small><span class="err">${esc((j.error || "").slice(0, 400))}</span></span></div>`).join("")}</div></section>` : "") +
+      (done.length ? `<section class="block">${bh("Terminado en esta sesión", "done")}<div class="files">${done.map(j => `<div class="file">${th(j)}<span class="n">${esc(j.file)}<small>${tag(j)}${esc(from(j))}</small></span><button class="btn sm gh" data-dir="${j.id}" aria-label="Abrir carpeta" title="Abrir la carpeta en esta PC">${icon("folder", 15)}<span class="hide-sm">Abrir carpeta</span></button><a class="btn sm" href="${j.kind === "download" ? `/api/downloads/file/${encodeURIComponent(j.file)}` : `/api/projects/${j.pid}/files/${encodeURIComponent(j.file)}`}" download>${icon("download", 15)}Guardar</a></div>`).join("")}</div></section>` : "") +
+      (ytUp.length ? `<section class="block"><details class="qup"${upOpen ? " open" : ""}><summary><h2>Ya en YouTube (${ytUp.length})</h2>${clr("up")}</summary><div class="files" data-qyt>${ytRows(ytUp)}</div></details></section>` : "") ||
       `<div class="empty">${icon("queue", 34)}<h2>No hay nada en marcha</h2><p>Aquí verás los análisis, las exportaciones y las descargas mientras trabajan. Puedes seguir editando: no se detienen.</p></div>`;
+    const groups = { done: [done, []], bad: [bad, []], up: [[], ytUp], no: [[], ytNo], all: [done, [...ytUp, ...ytNo]] }, all = $("#qclear"); all.hidden = !(done.length || ytUp.length || ytNo.length);
+    const clear = (b, k) => b.onclick = guard(async (e) => {
+      e.preventDefault(); e.stopPropagation(); b.disabled = true;
+      try {
+        const [a, c] = groups[k], r = await api("/api/cola/limpiar", { method: "POST", json: { jobs: a.map(x => x.id), pubs: c.map(x => x.id) } }); sig = "";
+        toast(r.left ? `${r.left === 1 ? "Queda 1" : `Quedan ${r.left}`} en la lista: YouTube no ha terminado o algo falló` : "Lista limpia. Tus archivos y videos siguen igual");
+      } finally { b.disabled = false; }
+    });
+    clear(all, "all"); $$("[data-clear]", box).forEach(b => clear(b, b.dataset.clear));
+    $$("[data-dir]", box).forEach(b => b.onclick = guard(async () => {
+      const j = done.find(x => x.id === b.dataset.dir), r = await api(j.kind === "download" ? "/api/downloads/open-folder" : `/api/projects/${j.pid}/open-folder`, { method: "POST", json: { file: j.file } });
+      if (!r.found) toast("Ese archivo ya no está en la carpeta", true);
+    }));
     $$("[data-qyt]", box).forEach(b => ytBind(b, () => { sig = ""; })); const up = $(".qup", box); if (up) up.ontoggle = () => { upOpen = up.open; };
   });
 }
@@ -131,7 +146,9 @@ async function ajustes() {
   if (window.APP_VERSION) { $("#s-about").hidden = false; $("#s-ver").textContent = `${window.APP_NAME}, versión ${window.APP_VERSION}`; $("#s-author").textContent = window.APP_AUTHOR; $("#s-notice").textContent = window.APP_NOTICE; }
   updPanel($("#s-upd")); ytPanel($("#s-yt"));
   if (location.hash.endsWith("/youtube")) setTimeout(() => $("#s-ytsec") && $("#s-ytsec").scrollIntoView(), 350);
-  if (window.APP_DONATE) { $("#s-cafe").hidden = false; $("#s-cafe a").href = window.APP_DONATE; }
+  if (window.APP_DONATE) { $("#s-cafe").hidden = false; $("#s-cafe a").href = window.APP_DONATE; $("#s-nextcafe").hidden = false; }
+  if ((window.APP_ROADMAP || []).length) { $("#s-next").hidden = false; $("#s-next ul").innerHTML = window.APP_ROADMAP.map(x => `<li>${esc(x)}</li>`).join(""); }
+  if (location.hash.endsWith("/lo-que-viene")) setTimeout(() => $("#s-next") && $("#s-next").scrollIntoView({ block: "center" }), 350);
   const dirty = () => { $("#s-ok").textContent = "Cambios sin guardar"; $("#s-ok").style.color = "var(--mut)"; };
   const engine = choice($("#s-engine"), dirty); engine.value = s.engine;
   $("#s-encoder").innerHTML = `<option value="auto">Automático</option>`; $("#s-encoder").value = "auto";
@@ -155,19 +172,13 @@ async function ajustes() {
   }).catch(() => {});
   loadOllama(); modelManager(() => loadOllama(true));
   const srv = serverForm(s, dirty);
-  const fl = (k) => s.fonts[k] || k;
-  const DEF_TEXT = {
-    titulo: (v) => v.title_on === false ? "sin titular" : `${s.title_styles[v.title_style] || v.title_style}, letra ${fl(v.title_font)}, color ${v.title_color}, tamaño ${v.title_size}, altura ${Math.round(v.title_y / 19.2)} %`,
-    subtitulos: (v) => v.subs_on === false ? "sin subtítulos" : `letra ${fl(v.font)}, color ${v.color}, tamaño ${v.sub_size}, altura ${Math.round(v.sub_y / 19.2)} %`,
-    marca: (v) => v.brand && v.brand.length ? plural(v.brand.length, "sticker", "stickers") : "sin stickers", encuadre: (v) => modeText(v),
-    estilo: (v) => [v.style === "dinamico" ? "dinámico" : "karaoke", v.remove_silence ? "quitar silencios" : "", v.filter && v.filter !== "ninguno" ? `filtro ${v.filter}` : ""].filter(Boolean).join(", "),
-    opciones: (v) => `hasta ${v.max_clips} clips de ${v.min_len} a ${v.max_len} s, idioma ${v.language === "auto" ? "automático" : v.language}, descarga ${!v.download || v.download === "auto" ? "automática" : v.download + "p"}`,
-  };
+  const DEF_TEXT = defText(s);
   const showDefs = async () => {
     const [d, fr] = await Promise.all([api("/api/defaults"), api("/api/folders")]); FOLDERS = fr.folders; const el = $("#s-defs"); if (!el) return;
     const scopes = [["", "Generales", d.general], ...FOLDERS.filter(f => d.carpetas[f.id]).map(f => [f.id, f.name, d.carpetas[f.id], f.color])];
-    el.innerHTML = scopes.map(([id, name, g, color]) => { const n = Object.keys(g).length; return `<div class="defscope"><div class="defhead">${color ? `<i style="background:${esc(color)}"></i>` : ""}<b>${esc(name)}</b>${n ? `<button class="btn sm gh bad" data-f="${id}" data-g="" data-n="${esc(name)}">Quitar todos</button>` : ""}</div>
+    el.innerHTML = scopes.map(([id, name, g, color]) => { const n = Object.keys(g).length; return `<div class="defscope"><div class="defhead">${color ? `<i style="background:${esc(color)}"></i>` : ""}<b>${esc(name)}</b>${n && FOLDERS.length ? `<button class="btn sm" data-cp="${id}">Usar en otra carpeta…</button>` : ""}${n ? `<button class="btn sm gh bad" data-f="${id}" data-g="" data-n="${esc(name)}">Quitar todos</button>` : ""}</div>
       ${n ? DEF_LABELS.filter(([k]) => g[k]).map(([k, l]) => `<div class="defrow"><span class="k">${l}</span><span>${esc(DEF_TEXT[k](g[k]))}</span><button class="btn sm gh sq" data-f="${id}" data-g="${k}" data-n="${esc(name)}" title="Quitar" aria-label="Quitar ${l}">${icon("close", 14)}</button></div>`).join("") : `<p class="mut small" style="margin-top:4px">Ninguno: se usan los de fábrica.</p>`}</div>`; }).join("");
+    $$("button[data-cp]", el).forEach(b => b.onclick = guard(async () => { if (await copyDefs({ from: b.dataset.cp })) showDefs(); }));
     $$("button[data-f]", el).forEach(b => b.onclick = guard(async () => {
       const what = b.dataset.g ? `«${DEF_LABELS.find(([k]) => k === b.dataset.g)[1]}»` : "todos los predeterminados";
       if (!(await ask({ title: `¿Quitar ${what}?`, text: `De ${b.dataset.f ? `la carpeta «${b.dataset.n}»` : "los generales"}. Los clips que ya existen no cambian.`, ok: "Quitar", danger: true }))) return;

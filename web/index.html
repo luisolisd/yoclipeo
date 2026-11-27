@@ -15,6 +15,7 @@
   <a class="nav" href="#/" data-nav="home"><span data-ic="library" data-s="20"></span>Biblioteca</a>
   <a class="nav" href="#/cola" data-nav="cola"><span data-ic="queue" data-s="20"></span>Cola<b class="badge" id="qbadge" hidden></b></a>
   <a class="nav" href="#/descargas" data-nav="descargas"><span data-ic="download" data-s="20"></span>Descargas</a>
+  <a class="nav hide-sm" href="#/espacio" data-nav="espacio"><span data-ic="disk" data-s="20"></span>Espacio</a>
   <a class="nav" href="#/ajustes" data-nav="ajustes"><span data-ic="settings" data-s="20"></span>Ajustes</a>
   <div class="foot"><button class="upd" id="upd" hidden><span data-ic="update" data-s="20"></span><b>Actualizar</b></button><button id="theme" title="Claro u oscuro" aria-label="Cambiar entre claro y oscuro"><span data-ic="theme"></span></button><a class="ver" id="ver" href="#/ajustes" hidden></a><a class="cafe" id="cafe" target="_blank" rel="noopener noreferrer" title="Invítame un café" aria-label="Invítame un café" hidden><span data-ic="coffee"></span></a><a class="sys" id="sysbadge" href="#/ajustes"></a></div>
 </nav>
@@ -24,10 +25,10 @@
 <!-- ===================== BIBLIOTECA ===================== -->
 <template id="tpl-library">
   <div class="page">
-    <div class="phead"><div class="grow" id="lhead" style="display:flex;align-items:center;gap:8px"><h1>Biblioteca</h1></div>
+    <div class="phead"><div class="grow" id="lhead" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><h1>Biblioteca</h1></div>
       <label class="search"><span data-ic="search" data-s="16"></span><input type="search" id="lsearch" placeholder="Buscar un proyecto" aria-label="Buscar un proyecto"></label>
       <button class="btn pri hide-sm" id="lnew"><span data-ic="plus" data-s="16"></span>Nuevo proyecto</button></div>
-    <div id="lnotice"></div><div id="llive"></div>
+    <div id="lnotice"></div><div id="lspace"></div><div id="llive"></div>
     <div class="lib"><nav class="tree" id="tree" aria-label="Carpetas"></nav><div class="rows" id="rows"></div></div>
   </div>
 </template>
@@ -57,12 +58,23 @@
       <label class="fld"><span class="lb" id="l-namelb">Nombre de los proyectos</span><input type="text" id="l-name" maxlength="70" autocomplete="off"></label>
       <p class="mut small" id="l-info" role="status"></p>
     </section>
+    <section id="vodbox" hidden><h3>Qué parte del video</h3>
+      <div class="seg" id="v-mode"><button data-v="all">Todo</button><button data-v="some">Elegir periodos</button></div>
+      <div id="v-some" hidden>
+        <div class="vtrack" id="v-track"><div class="vstrip" id="v-strip" aria-hidden="true"></div><div id="v-bars"></div></div>
+        <div class="vscale mut small" id="v-scale" aria-hidden="true"></div>
+        <div id="v-rows"></div>
+        <button type="button" class="btn sm" id="v-add">Agregar periodo</button>
+      </div>
+      <p class="mut small" id="v-info" role="status"></p>
+    </section>
     <section><h3>Qué quieres sacar</h3>
       <div class="seg" id="o-whole"><button data-v="0">Los mejores momentos</button><button data-v="1">El video completo, sin recortar</button></div>
       <div class="two whole-hide" style="margin-top:14px">
         <label class="fld"><span class="lb">Cuántos clips, como máximo</span><input id="o-n" type="number" value="10" min="1" max="40"></label>
         <div class="fld"><span class="lb">Duración de cada uno, en segundos</span><span class="pair"><input id="o-min" type="number" value="20" min="5" max="180" aria-label="Duración mínima"> a <input id="o-max" type="number" value="60" min="10" max="180" aria-label="Duración máxima"></span></div>
       </div>
+      <label class="chk" id="o-chatbox" style="margin-top:12px" hidden><input type="checkbox" id="o-chat" checked> <span>Guiarse también por las reacciones del chat<span class="mut small">Se lee de Kick mientras se transcribe.</span></span></label>
     </section>
     <section><h3>Encuadre</h3>
       <div class="frames" id="o-mode"><button data-v="auto" data-frame="auto">Sigue a quien habla</button><button data-v="streamer" data-frame="streamer">Cámara y juego</button><button data-v="apilado" data-frame="apilado">Vertical y horizontal</button><button data-v="full" data-frame="full">Entero con fondo</button></div>
@@ -112,6 +124,7 @@
     <div class="two"><label class="fld"><span class="lb">Cuántos clips, como máximo</span><input id="r-n" type="number" min="1" max="40"></label>
       <div class="fld"><span class="lb">Duración de cada uno, en segundos</span><span class="pair"><input id="r-min" type="number" min="5" max="180" aria-label="Duración mínima"> a <input id="r-max" type="number" min="10" max="180" aria-label="Duración máxima"></span></div></div>
     <label class="chk"><input type="checkbox" id="r-silence"> <span>Quitar silencios</span></label>
+    <label class="chk" id="r-chatbox" style="margin-top:8px" hidden><input type="checkbox" id="r-chat" checked> <span>Guiarse también por las reacciones del chat<span class="mut small">La primera vez se lee de Kick: unos 12 minutos por cada hora y media de video.</span></span></label>
     <div class="err" id="r-err" role="alert"></div></div>
     <div class="acts"><button class="btn gh" id="r-cancel">Cancelar</button><button class="btn pri" id="r-go">Reemplazar los clips</button></div>
   </dialog>
@@ -124,6 +137,7 @@
       <button class="btn gh sm" id="eback"><span data-ic="left" data-s="16"></span>Clips</button>
       <div class="tt" id="etitle"></div><div class="st" id="savestate" role="status"></div>
       <div class="nav"><button class="btn gh sq sm" id="eprev" aria-label="Clip anterior" title="Clip anterior"><span data-ic="left" data-s="17"></span></button><span id="enum"></span><button class="btn gh sq sm" id="enext" aria-label="Clip siguiente" title="Clip siguiente"><span data-ic="right" data-s="17"></span></button></div>
+      <button class="btn gh sq sm" id="edel" aria-label="Quitar este clip" title="Quitar este clip"><span data-ic="trash" data-s="16"></span></button>
       <button class="btn sm" id="elook"><span data-ic="layers" data-s="16"></span>Estilo del clip</button>
       <button class="btn sm pri" id="eexport"><span data-ic="out" data-s="16"></span>Exportar</button>
     </header>
@@ -138,6 +152,7 @@
       <button role="tab" data-tab="t-corte"><span data-ic="cut" data-s="20"></span>Corte</button>
       <button role="tab" data-tab="t-ritmo"><span data-ic="rhythm" data-s="20"></span>Ritmo</button>
       <button role="tab" data-tab="t-marca"><span data-ic="brand" data-s="20"></span>Marca</button>
+      <button role="tab" data-tab="t-chat" id="tabchat" hidden><span data-ic="chat" data-s="20"></span>Chat</button>
       <button role="tab" data-tab="t-salida"><span data-ic="out" data-s="20"></span>Salida</button>
     </nav>
     <div class="panel">
@@ -160,6 +175,14 @@
           <div class="fld"><span class="lb">Color de la palabra que suena</span><div class="swatches" id="e-color"></div></div>
           <label class="fld"><span class="lb">Tamaño <output></output></span><input type="range" id="e-size" min="60" max="140" step="2"></label>
           <label class="fld"><span class="lb">Altura <output></output></span><input type="range" id="e-suby" min="500" max="1650" step="10"></label></div>
+        <div class="grp" id="syncbox"><h3>Sincronía</h3>
+          <p class="hint">Si los subtítulos salen antes o después de la voz, muévelos aquí.</p>
+          <div class="seg" id="e-syncwhat"><button data-v="all">Todo el clip</button><button data-v="from">Desde una frase</button><button data-v="one">Una frase</button></div>
+          <div id="syncphrase" class="syncph" hidden><button class="btn gh sq sm" id="syncprev" aria-label="Frase anterior"><span data-ic="left" data-s="16"></span></button><b id="synctext"></b><button class="btn gh sq sm" id="syncnext" aria-label="Frase siguiente"><span data-ic="right" data-s="16"></span></button></div>
+          <span class="nudge sync" id="syncn"><button data-sh="-0.5" aria-label="Adelantar medio segundo">−0,5</button><button data-sh="-0.1" aria-label="Adelantar una décima">−0,1</button><output id="syncval"></output><button data-sh="0.1" aria-label="Atrasar una décima">+0,1</button><button data-sh="0.5" aria-label="Atrasar medio segundo">+0,5</button></span>
+          <div class="syncends"><span>Salen antes</span><span>Salen después</span></div>
+          <p class="hint" id="synchint" hidden>Elige la frase con las flechas, en la línea de tiempo o tocando una palabra del guion.</p>
+          <button class="btn sm" id="syncreset" hidden>Quitar los ajustes de este clip</button></div>
       </div>
       <div class="tab" id="t-encuadre"><h2>Encuadre</h2>
         <div class="frames" id="e-layout"><button data-v="vertical" data-frame="auto">Vertical</button><button data-v="apilado" data-frame="apilado">Vertical y horizontal</button><button data-v="streamer" data-frame="streamer">Cámara y juego</button><button data-v="full" data-frame="full">Entero con fondo</button><button data-v="split" data-frame="split">Dos videos</button></div>
@@ -198,17 +221,39 @@
         <p class="hint" style="margin-top:10px">Sirven para todos tus proyectos. PNG con fondo transparente queda mejor.</p>
         <div class="grp"><div class="hd"><h3>En este clip</h3><button class="btn sm gh" id="ball">Poner en todos</button></div><div id="blist" class="blist"></div></div>
       </div>
+      <div class="tab" id="t-chat"><h2>Chat de Kick</h2>
+        <label class="chk"><input type="checkbox" id="e-chat-on"> <span>Mostrar el chat<span class="mut small">Lo que escribieron en el directo durante este clip.</span></span></label>
+        <p class="hint" id="chatstate" role="status" hidden></p>
+        <div id="chatopts" hidden>
+          <div class="fld" style="margin-top:10px"><div class="seg" id="e-chat-mode"><button data-v="mensajes">Mensajes</button><button data-v="emotes">Emotes que suben</button></div></div>
+          <label class="chk"><input type="checkbox" id="e-chat-safe"> <span>Quitar groserías<span class="mut small">Mensajes con insultos o palabras fuertes.</span></span></label>
+          <label class="chk" id="chatnames"><input type="checkbox" id="e-chat-names"> <span>Mostrar los nombres</span></label>
+          <label class="chk"><input type="checkbox" id="e-chat-count"> <span>Contar los emotes<span class="mut small">Los más usados en los últimos 5 segundos.</span></span></label>
+          <div class="grp"><div class="fld"><span class="lb">Lugar</span><div class="seg" id="e-chat-side"><button data-v="izq">Izquierda</button><button data-v="der">Derecha</button></div></div>
+            <label class="fld"><span class="lb">Tamaño <output></output></span><input type="range" id="e-chat-size" min="26" max="60" step="1"></label>
+            <label class="fld"><span class="lb">Posición horizontal <output></output></span><input type="range" id="e-chat-x" min="0" max="100" step="1"></label>
+            <label class="fld"><span class="lb">Altura <output></output></span><input type="range" id="e-chat-y" min="420" max="1800" step="10"></label>
+            <label class="fld"><span class="lb">Adelantar el chat <output></output></span><input type="range" id="e-chat-lead" min="-10" max="10" step="0.5"></label>
+            <p class="hint">El público ve el directo unos segundos después: adelántalo si la reacción llega tarde.</p></div>
+          <div class="grp"><h3>Mensajes de este clip</h3><div id="chatlist" class="chatlist"></div></div>
+          <div class="grp"><h3>Lo que no sale</h3><label class="fld"><textarea id="chatblock" rows="4" aria-label="Palabras que no salen" placeholder="Una palabra por línea"></textarea></label>
+            <p class="hint">Vale para todos tus videos. Con @nombre se quita a esa persona. Los bots, los enlaces y lo repetido ya se quitan solos.</p></div>
+        </div>
+      </div>
       <div class="tab" id="t-salida"><h2>Salida</h2>
         <div class="quals"><button class="pri" data-q="1080p"><b>1080p</b><small>La mejor</small></button><button data-q="720p"><b>720p</b><small>Más ligero</small></button><button data-q="480p"><b>480p</b><small>Borrador</small></button><button data-q="mp3"><b>MP3</b><small>Solo el audio</small></button></div>
         <div id="ejobs"></div>
         <div class="grp"><div class="hd"><h3>Archivos</h3><button class="btn sm gh" id="eopen"><span data-ic="folder" data-s="15"></span>Abrir carpeta</button></div><p class="mut small" id="noexp">Este clip aún no se ha exportado.</p><div id="eexports" class="files"></div></div>
         <div class="grp"><div class="hd"><h3>Para publicar</h3><button class="btn sm gh" id="copypub"><span data-ic="copy" data-s="15"></span>Copiar todo</button></div>
           <label class="fld"><span class="lb">Descripción</span><textarea id="e-desc" rows="3"></textarea></label><label class="fld"><span class="lb">Hashtags</span><input id="e-tags" type="text"></label>
-          <button class="btn" id="eyt" style="width:100%"><span data-ic="upload" data-s="16"></span>Publicar en YouTube</button><div id="epubs" class="files" style="margin-top:10px"></div></div>
+          <button class="btn" id="eyt" style="width:100%"><span data-ic="upload" data-s="16"></span>Publicar en YouTube</button><button type="button" class="lnk" id="emine" style="margin-top:10px" hidden>Ya lo subí por mi cuenta</button><div id="epubs" class="files" style="margin-top:10px"></div></div>
         <div class="grp" id="reasonbox"><h3>Por qué lo eligió</h3><p class="hint" id="e-reason"></p></div>
       </div>
     </div>
-    <section class="guion"><div class="hd"><h3>Guion</h3><span class="mut small">Toca una palabra para corregirla o marcarla como clave.</span></div><div class="words" id="words"></div></section>
+    <section class="guion"><div class="hd"><h3>Guion</h3><button class="btn sm" id="repopen" aria-expanded="false" aria-controls="repbox">Reemplazar</button><span class="mut small">Toca una palabra para corregirla o marcarla como clave.</span></div><form id="repbox" class="repbox" hidden autocomplete="off"><div class="two"><label class="fld"><span class="lb">Buscar</span><input type="text" id="repfind" maxlength="80"></label><label class="fld"><span class="lb">Cambiar por</span><input type="text" id="repto" maxlength="80"></label></div>
+        <div class="seg" id="repwhere"><button data-v="clip">Este clip</button><button data-v="all">Todo el proyecto</button></div>
+        <p class="hint" id="repinfo" role="status"></p>
+        <div class="acts"><button class="btn pri sm" id="repgo">Reemplazar</button><button type="button" class="btn sm" id="repundo" hidden>Deshacer</button><button type="button" class="btn gh sm" id="repclose">Cerrar</button></div></form><div class="words" id="words"></div></section>
     <section class="tl" id="tl" aria-label="Línea de tiempo"></section>
   </div>
   <dialog id="applydlg" class="dlg"><div class="in"><h2>Aplicar a todo el proyecto</h2><p class="mut">Copia el estilo de este clip a los demás. Lo propio de cada uno no cambia: texto del titular, guion, corte y emojis.</p>
@@ -216,26 +261,30 @@
       <label class="chk"><input type="checkbox" data-g="subtitulos" checked> <span><b>Subtítulos</b><span class="mut small">Estilo, letra, color, tamaño, altura y mayúsculas</span></span></label>
       <label class="chk"><input type="checkbox" data-g="titulo" checked> <span><b>Estilo del titular</b><span class="mut small">Forma, letra, color, tamaño, altura y cuánto se ve</span></span></label>
       <label class="chk"><input type="checkbox" data-g="dinamico" checked> <span><b>Ritmo y color</b><span class="mut small">Zooms, emojis, logos, quitar silencios y color del video</span></span></label>
-      <label class="chk"><input type="checkbox" data-g="marca" checked> <span><b>Marca</b><span class="mut small">Reemplaza los stickers de los demás clips</span></span></label></div>
+      <label class="chk"><input type="checkbox" data-g="marca" checked> <span><b>Marca</b><span class="mut small">Reemplaza los stickers de los demás clips</span></span></label>
+      <label class="chk onlychat"><input type="checkbox" data-g="chat"> <span><b>Chat de Kick</b><span class="mut small">Si se muestra, cómo, dónde y de qué tamaño</span></span></label></div>
     <div class="err" id="applyerr" role="alert"></div></div><div class="acts"><button class="btn gh" id="applycancel">Cancelar</button><button class="btn pri" id="applygo">Aplicar</button></div></dialog>
   <dialog id="defdlg" class="dlg"><div class="in"><h2>Guardar como predeterminado</h2><p class="mut">Así saldrán los clips nuevos. Los que ya existen no cambian.</p>
     <label class="fld"><span class="lb">Para</span><select id="defscope"></select></label><p class="mut small" id="defscopehint" style="margin:-8px 0 8px"></p>
     <div class="opts"><label class="chk"><input type="checkbox" data-g="titulo" checked> <span><b>Estilo del titular</b><span class="mut small">Si se muestra, cuánto, forma, letra, color, tamaño y altura</span></span></label>
       <label class="chk"><input type="checkbox" data-g="subtitulos" checked> <span><b>Subtítulos</b><span class="mut small">Si se muestran, letra, color, tamaño, altura y mayúsculas</span></span></label>
       <label class="chk"><input type="checkbox" data-g="marca" checked> <span><b>Marca</b><span class="mut small" id="defmarca"></span></span></label>
+      <label class="chk onlychat"><input type="checkbox" data-g="chat"> <span><b>Chat de Kick</b><span class="mut small">Si se muestra, cómo, dónde y de qué tamaño</span></span></label>
       <label class="chk"><input type="checkbox" data-g="encuadre" checked> <span><b>Encuadre</b><span class="mut small" id="defenc"></span></span></label>
       <label class="chk"><input type="checkbox" data-g="estilo" checked> <span><b>Estilo y efectos</b><span class="mut small">Karaoke o dinámico, zooms, emojis, logos, quitar silencios y color</span></span></label></div>
     <div class="err" id="deferr" role="alert"></div></div><div class="acts"><button class="btn gh" id="defcancel">Cancelar</button><button class="btn pri" id="defgo">Guardar</button></div></dialog>
 </template>
 
 <!-- ===================== COLA, DESCARGAS, AJUSTES ===================== -->
-<template id="tpl-cola"><div class="page narrow"><div class="phead"><h1>Cola</h1></div><div id="qbox"></div></div></template>
+<template id="tpl-cola"><div class="page narrow"><div class="phead"><h1>Cola</h1><button type="button" class="btn sm gh" id="qclear" style="margin-left:auto" hidden>Limpiar lo terminado</button></div><div id="qbox"></div></div></template>
 
 <template id="tpl-descargas"><div class="page narrow">
   <div class="phead"><div class="grow"><h1>Descargas</h1><p class="mut" style="margin-top:6px">Baja un video entero (hasta 1080p) o solo su audio en MP3. Solo para videos tuyos o con permiso de su autor.</p></div></div>
   <form class="dlform" id="dform"><input type="text" id="durl" placeholder="Pega el enlace del video" aria-label="Enlace del video" autocomplete="off"><div class="seg inline" id="dfmt"><button data-v="video">Video</button><button data-v="mp3">MP3</button></div><button class="btn pri">Descargar</button></form>
   <div class="err" id="derr" role="alert"></div>
   <p class="mut small" id="dnone" style="margin-top:18px" hidden>Aquí quedarán tus descargas.</p><div class="files" id="dlist" style="margin-top:18px"></div></div></template>
+
+<template id="tpl-espacio"><div class="page narrow"><div class="phead"><h1>Espacio</h1></div><div id="spbox"><p class="mut">Midiendo…</p></div></div></template>
 
 <template id="tpl-ajustes"><div class="page narrow"><div class="phead"><h1>Ajustes</h1></div>
   <div class="setgrid"><div><h3>Tu equipo</h3><p class="mut">Lo que encontré en este PC y con qué trabajará cada paso.</p></div><div><div id="s-equipo"><p class="mut">Comprobando…</p></div><div class="eqfoot" id="s-eqfoot"></div></div></div>
@@ -257,8 +306,9 @@
     <div class="savebar"><button class="btn pri">Guardar ajustes</button><span class="ok" id="s-ok" role="status"></span></div>
   </form>
   <div class="setgrid" id="s-ytsec"><div><h3>YouTube</h3><p class="mut">Publica y programa clips en tu canal, con tu propia app de Google. Nada se sube sin que lo confirmes.</p></div><div id="s-yt"><p class="mut">Comprobando…</p></div></div>
+  <div class="setgrid"><div><h3>Espacio</h3><p class="mut">Cuánto ocupan tus proyectos, descargas y modelos, y qué puedes liberar.</p></div><div><a class="btn" href="#/espacio"><span data-ic="disk" data-s="16"></span>Ver qué ocupa el disco</a></div></div>
   <div class="setgrid"><div><h3>Predeterminados</h3><p class="mut">Se guardan desde un clip («Estilo del clip») o al crear un proyecto. Cada carpeta usa los suyos; lo que le falte sale de los generales.</p></div><div id="s-defs"></div></div>
-  <div class="setgrid" id="s-about" hidden><div><h3>Acerca de</h3></div><div><p id="s-ver"></p><p id="s-author" style="margin-top:6px"></p><p class="mut" id="s-notice" style="margin-top:6px"></p><div id="s-upd" style="margin-top:16px"></div><div id="s-cafe" hidden><p style="margin:16px 0 10px">Si te sirve, puedes apoyar su desarrollo.</p><a class="btn" target="_blank" rel="noopener noreferrer"><span data-ic="coffee" data-s="16"></span>Invítame un café</a></div></div></div>
+  <div class="setgrid" id="s-about" hidden><div><h3>Acerca de</h3></div><div><p id="s-ver"></p><p id="s-author" style="margin-top:6px"></p><p class="mut" id="s-notice" style="margin-top:6px"></p><div id="s-upd" style="margin-top:16px"></div><div id="s-next" hidden><h4 style="margin:20px 0 8px">Lo que viene</h4><ul class="next"></ul><p class="mut small" id="s-nextcafe" hidden style="margin-top:8px">Si invitas un café, dime en el mensaje qué quieres primero: lo más pedido va primero.</p></div><div id="s-cafe" hidden><p style="margin:16px 0 10px">Si te sirve, puedes apoyar su desarrollo.</p><a class="btn" target="_blank" rel="noopener noreferrer"><span data-ic="coffee" data-s="16"></span>Invítame un café</a></div></div></div>
 </div></template>
 
 <script src="app-name.js"></script>
@@ -273,6 +323,7 @@
 <script src="equipo.js"></script>
 <script src="actualizar.js"></script>
 <script src="youtube.js"></script>
+<script src="espacio.js"></script>
 <script src="pages.js"></script>
 <script src="app.js"></script>
 </body>

@@ -2,6 +2,48 @@
 
 La versión se ve debajo del botón de tema y en Ajustes, «Acerca de».
 
+## 1.4.7
+- «Lo que viene» en Ajustes › Acerca de: lo que se está preparando. Si invitas un café, dime en el mensaje qué quieres primero.
+- Al llegar a 10, 50, 200… clips exportados sale un aviso pequeño para invitar un café. Sale como mucho una vez al mes, nunca bloquea y, si dices «Ya lo hice», no vuelve en meses.
+
+## 1.4.6
+- Usar los predeterminados de otra carpeta está más a la mano: en el editor («Estilo del clip»), para ese clip o para todos los del proyecto; en los «…» del proyecto; arriba al abrir una carpeta, y en Ajustes.
+
+## 1.4.5
+- En videos de Kick, la IA también se guía por cuánto reaccionó el chat en cada momento. Se mide contra lo normal de esos minutos y por personas distintas, para que no gane el spam. Se lee mientras se transcribe y se puede apagar al crear el proyecto o al volver a elegir.
+- En el editor, «Subtítulos» tiene «Sincronía»: adelanta o atrasa los subtítulos de todo el clip, de una frase en adelante o de una sola frase. Los emojis y logos se mueven con su palabra.
+- En el guion, «Reemplazar» corrige de una vez todas las palabras iguales que salieron mal: en este clip o en todo el proyecto. Al corregir una a mano, avisa si hay más iguales.
+- Puedes usar en una carpeta los predeterminados de otra (o los generales), completos o solo una parte: en los «…» de la carpeta o en Ajustes.
+- Cada clip muestra si el chat reaccionó más de lo normal y con qué (risas, sorpresa o emoción).
+
+## 1.4.4
+- Nuevo: Espacio. Muestra cuánto ocupa cada proyecto, tus descargas, los modelos y el programa, y deja liberar lo que ya no necesitas.
+- Si Windows no deja borrar un proyecto porque algo lo está usando, se ve ahí con su nombre, cuánto ocupa y qué programa lo tiene abierto. YoClipeo lo sigue intentando hasta terminar.
+- Corregido: un borrado a medias podía quedar en el disco sin que nada lo mostrara.
+
+## 1.4.3
+- En la Cola, lo terminado tiene «Abrir carpeta»: se abre con ese archivo ya seleccionado.
+- La Cola se puede limpiar: lo terminado, lo que ya está en YouTube, lo que subiste por tu cuenta y lo cancelado, por sección o todo junto. No borra archivos ni videos, y cada clip conserva lo suyo.
+
+## 1.4.2
+- «Ya lo subí»: marca un clip que subiste por tu cuenta. Deja de esperar en la Cola, queda anotado con su enlace y te avisa si lo vas a publicar otra vez. Se puede deshacer.
+
+## 1.4.1
+- La línea de tiempo del editor se mueve a los lados: con la barra de abajo, Shift + rueda, el touchpad o dos dedos en el celular.
+- Sigue a la aguja al reproducir y avanza sola si arrastras hasta la orilla. Ya no pierde el acercamiento al cambiar algo.
+
+## 1.4.0
+- Puedes quitar un clip desde el editor, con el bote de basura de arriba. Avisa si ese clip está por subirse a YouTube y pasa al siguiente.
+- Chat de Kick: si Kick pide ir más despacio, YoClipeo espera y sigue solo, sin perder lo que ya leyó.
+
+## 1.3.9
+- Directos grabados de Kick: elige uno o varios periodos y baja solo eso, sin la intro ni lo que no vas a usar. Ves una imagen de cada inicio y fin, y cuánto pesará antes de bajarlo.
+- Los periodos se unen en un solo proyecto y ningún clip pasa de un periodo a otro. El chat de Kick sigue a tiempo.
+
+## 1.3.8
+- Chat de Kick en el clip: lo que escribieron en ese momento del directo, como mensajes o como emotes que suben. Está en el editor, en «Chat», y solo aparece en videos de Kick.
+- Eliges el lado, la posición horizontal, la altura y el tamaño, si salen los nombres y el contador de emotes, y qué mensajes, palabras o personas no salen.
+
 ## 1.3.7
 - Si YouTube llega a su límite del día, las subidas quedan en pausa y siguen solas.
 - Reintentar un clip de un lote sigue con todo lo que falta, en el orden del video.

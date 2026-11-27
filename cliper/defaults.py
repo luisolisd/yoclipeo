@@ -12,11 +12,12 @@ GROUPS = {
     "titulo": ("title_on", "title_secs", "title_style", "title_font", "title_color", "title_size", "title_y"),
     "subtitulos": ("font", "color", "subs_on", "sub_y", "sub_size", "upper"),
     "marca": ("brand",),
+    "chat": ("chat_on", "chat_mode", "chat_names", "chat_count", "chat_safe", "chat_side", "chat_size", "chat_x", "chat_y", "chat_lead"),
     "estilo": ("style", "zooms", "emojis_on", "logos_on", "remove_silence", "filter"),
     "encuadre": ("mode", "swap", "framing", "manual_x", "cam_h"),
     "opciones": ("language", "min_len", "max_len", "max_clips", "download"),
 }
-EDITOR_GROUPS = ("titulo", "subtitulos", "marca", "estilo", "encuadre")  # los que se guardan desde un clip
+EDITOR_GROUPS = ("titulo", "subtitulos", "marca", "chat", "estilo", "encuadre")  # los que se guardan desde un clip
 MODES = ("auto", "streamer", "apilado", "full")
 QUALITIES = ("auto", "1080", "720", "480")  # calidad al bajar un enlace
 LANGS = ("auto", "es", "en", "pt", "fr", "it")
@@ -66,6 +67,20 @@ def remove(folder=None, group=None):
         if folder and not sc:
             d["carpetas"].pop(folder, None)
         _save(d)
+
+
+def copy(src, dst, groups):
+    """Copia estos grupos de una carpeta (None = generales) a otra. Lo demás del destino no cambia."""
+    if (src or None) == (dst or None):
+        raise ValueError("Elige dos carpetas distintas.")
+    with _lock:
+        d = load()
+        sc = d["carpetas"].get(src, {}) if src else d["general"]
+        vals = {g: json.loads(json.dumps(sc[g])) for g in GROUPS if g in groups and g in sc}
+        if not vals:
+            raise ValueError("Marca al menos una opción.")
+        put(vals, dst or None)
+    return list(vals)
 
 
 def resolve(folder=None):
@@ -132,7 +147,7 @@ def from_options(o, folder=None):
 # ------------------------------------------------------------ poner en un clip
 
 def _look(ed, r):
-    for g in ("titulo", "subtitulos", "marca"):
+    for g in ("titulo", "subtitulos", "marca", "chat"):
         ed.update(json.loads(json.dumps(r.get(g, {}))))
     if "filter" in r.get("estilo", {}):
         ed["filter"] = r["estilo"]["filter"]
@@ -178,9 +193,11 @@ def _frame(clip, mode, enc, vis, keep_boxes=False):
             ed[k] = mine[k]
 
 
-def dress_existing(clip, folder, vis):
-    """Clip que ya existe: solo se cambia lo que haya guardado. Devuelve los grupos aplicados."""
+def dress_existing(clip, folder, vis, groups=None):
+    """Clip que ya existe: solo se cambia lo que haya guardado (y, si se dice, solo esos grupos). Devuelve los grupos aplicados."""
     ed, r = clip["edit"], resolve(folder)
+    if groups is not None:
+        r = {g: v for g, v in r.items() if g in groups}
     _look(ed, r)
     if "estilo" in r:
         ed.update({k: v for k, v in r["estilo"].items() if k in GROUPS["estilo"]})

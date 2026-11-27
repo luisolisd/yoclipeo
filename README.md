@@ -37,6 +37,8 @@ En «Automático» usa lo primero que encuentre listo: Claude, otro servidor, Ol
 - **Encuadre:** vertical siguiendo a quien habla, apilado, cámara y juego, video entero con fondo desenfocado o dos videos sincronizados.
 - **Subtítulos:** karaoke o dinámico, con zooms, emojis y quitar silencios.
 - **Marca:** tus logos o stickers en los clips.
+- **Periodos de Kick:** en un directo grabado eliges qué tramos bajar. Los bordes se ajustan a los trozos en que Kick guarda el video, así que cada tramo puede salir unos segundos más largo.
+- **Chat de Kick:** en videos de Kick, los mensajes o emotes de ese momento del directo. Kick no tiene una forma oficial de leerlo, así que puede dejar de funcionar si cambia. El filtro de groserías quita lo común, no todo: revisa el clip antes de publicarlo.
 - **Exportar:** 1080p, 720p, 480p o MP3.
 - **Publicar en YouTube:** ahora, oculto, en privado o programado, uno o varios clips.
 - **Predeterminados** generales y por carpeta.
@@ -88,6 +90,12 @@ Cuando hay una versión nueva aparece el botón **Actualizar** abajo a la izquie
 Para eso hay que abrirlo con `Iniciar YoClipeo.bat`. Tus videos, proyectos, modelos y ajustes no se tocan.
 
 **Desde la 1.2.1**, que todavía no trae el botón: descarga el ZIP, ciérralo, copia su contenido encima sin borrar `data` y abre `Instalar YoClipeo.bat` otra vez.
+
+## Lo que viene
+- Publicar en TikTok desde YoClipeo.
+- Publicar en Instagram y Facebook desde YoClipeo.
+
+YoClipeo es gratis y lo hago en mis ratos. Si te sirve, [invítame un café](https://ko-fi.com/luisolisd) y dime en el mensaje qué quieres primero: lo más pedido va primero.
 
 ## Uso responsable
 Baja y publica solo contenido tuyo o con permiso, y respeta las reglas de cada plataforma.

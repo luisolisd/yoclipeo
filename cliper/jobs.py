@@ -11,7 +11,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import analyze, defaults, directo, ingest, media, plan, render, store, transcribe, vision
+from . import analyze, cafe, chat, defaults, directo, ingest, media, periodos, plan, pulso, render, store, transcribe, vision
 from .config import DOWNLOADS
 
 JOBS = {}            # id -> dict (exportaciones y descargas)
@@ -31,6 +31,14 @@ def _job(kind, **kw):
 def _set(j, **kw):
     with _jobs_lock:
         j.update(kw)
+
+
+def tidy(ids):
+    """Quita de la lista trabajos que ya acabaron (los archivos no se tocan). Devuelve cuántos se quedaron."""
+    with _jobs_lock:
+        for i in [i for i in ids if JOBS.get(i, {}).get("status") in ("listo", "error")]:
+            del JOBS[i]
+        return sum(i in JOBS for i in ids)
 
 
 def list_jobs():
@@ -57,9 +65,10 @@ def _sweep(pid):
         if store.load(pid) is not None or not d.exists():
             return
         gc.collect()
-        shutil.rmtree(d, ignore_errors=True)
-        if d.exists():
+        if not store._wipe(d):
             time.sleep(.5 + i * .5)
+    if d.exists() and store.load(pid) is None:
+        store.delete(pid)          # sigue marcada y se termina en cuanto se suelte
 
 
 _ask_lock = threading.Lock()
@@ -115,11 +124,13 @@ def process_project(pid, only_select=False, resume=False):
             path, title = _fetch(pid, p, d)
             store.update(pid, lambda q: (q["source"].update(file=str(path)), q.update(name=q.get("name") or title)))
             p = store.load(pid)
+            chat.remember(pid)
         src = Path(p["source"]["file"])
         info = media.probe(src)
         if not info["has_video"] or not info["width"]:
             raise RuntimeError("El archivo no tiene video legible.")
         store.update(pid, lambda q: q.update(media=info))
+        pulso.start(pid)          # las reacciones del chat se leen mientras se transcribe
         _stage(pid, "preparando", 0, "Creando copia para la vista previa…")
         if not media.proxy_ready(src, d / "proxy.mp4", info):     # si se cortó después, no se repite
             media.make_proxy(src, d / "proxy.mp4", lambda f: _stage(pid, "preparando", f * 0.85), info["duration"])
@@ -155,6 +166,8 @@ def _fetch(pid, p, d):
     """Baja el video del enlace con la calidad elegida (sin elegir = 1080p, como los proyectos de antes)."""
     if p["source"].get("live"):
         return directo.fetch_project(pid, p, d, lambda f, txt: _stage(pid, "descargando", f, txt))
+    if p["source"].get("periods"):
+        return periodos.fetch(pid, p, d / "src", lambda f, txt="": _stage(pid, "descargando", f, f"Descargando… {f * 100:.0f}%" + (f" · {txt}" if txt else "")))
     return ingest.download(p["source"]["url"], d / "src",
                            progress_cb=lambda f, txt="": _stage(pid, "descargando", f,
                                                                 f"Descargando… {f * 100:.0f}%" + (f" · {txt}" if txt else "")),
@@ -193,8 +206,17 @@ def _select_stage(pid, p, opts, tr, info):
             clips = [analyze.make_clip(0, dur, [], {"title": p.get("name", ""), "score": 50}, layout)]
             sel = {"engine": "sin audio"}
         else:
+            def reading(f, mins):
+                _stage(pid, "eligiendo momentos", 0.02, f"Leyendo las reacciones del chat… {f * 100:.0f}% (faltan unos {mins} min)")
+            pulse, why = pulso.wait(pid, reading, most=1.6 * pulso.STEP * len(pulso.wanted(store.load(pid) or p)) / 8 + 300)
             clips, sel = analyze.select_clips(tr, info["duration"], opts, layout,
-                                              lambda f, msg: _stage(pid, "eligiendo momentos", 0.02 + 0.96 * f, msg))
+                                              lambda f, msg: _stage(pid, "eligiendo momentos", 0.02 + 0.96 * f, msg), pulse)
+            if pulse:
+                sel["chat"] = True
+            elif why:
+                sel["chat_error"] = why[:200]
+        if not opts.get("whole"):
+            clips = periodos.keep_inside(clips, store.load(pid) or p)
         vis = vision.load(d / "vision.json") if layout == "streamer" else None
         folder = (store.load(pid) or p).get("folder")  # la carpeta pudo cambiar mientras se procesaba
         for c in clips:
@@ -218,6 +240,10 @@ def _select_stage(pid, p, opts, tr, info):
                 msg += " · elegidos por reglas"
             else:
                 msg += " · elegidos por reglas, sin IA (" + why[:160] + ")"
+        if sel.get("chat"):
+            msg += " · con las reacciones del chat"
+        elif sel.get("chat_error"):
+            msg += f" · sin el chat ({sel['chat_error'].rstrip('.')})"
         store.set_status(pid, status="listo", progress=100, message=msg)
     except Exception as e:
         traceback.print_exc()
@@ -305,8 +331,13 @@ def run_export(j):
     try:
         _set(j, status="renderizando")
         p = store.load(pid)
-        pl = plan.build(pid, cid)
         clip = store.find_clip(p, cid)
+        if quality != "mp3" and clip["edit"].get("chat_on") and chat.source(p):
+            try:
+                chat.ensure(pid, cid)
+            except ValueError as e:
+                raise RuntimeError(f"No se pudo leer el chat de Kick: {e} Para exportar sin chat, apágalo en la sección «Chat» del clip.")
+        pl = plan.build(pid, cid)
         out_dir = store.pdir(pid) / "exportados"
         out_dir.mkdir(exist_ok=True)
         safe = "".join(ch for ch in (clip.get("title") or cid) if ch.isalnum() or ch in " -_").strip()[:50] or cid
@@ -321,6 +352,10 @@ def run_export(j):
         rec = {"quality": quality, "file": out.name, "size": out.stat().st_size, "created": time.time(), "sig": _sig(pl)}
         store.update(pid, lambda q: _add_export(q, cid, rec))
         _set(j, status="listo", progress=100, file=out.name)
+        try:
+            cafe.count(pid, cid)
+        except Exception:
+            traceback.print_exc()
     except Exception as e:
         traceback.print_exc()
         _set(j, status="error", error=str(e)[:1500])
@@ -341,13 +376,33 @@ def run_download(j):
         info = media.probe(path)
         _set(j, status="listo", progress=100, file=path.name, title=title, size=path.stat().st_size,
              duration=info["duration"], height=info["height"])
-        idx = DOWNLOADS / "index.json"
-        data = json.loads(idx.read_text(encoding="utf-8")) if idx.exists() else []
-        data.insert(0, {k: j[k] for k in ("id", "url", "format", "file", "title", "size", "duration", "created")})
-        idx.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        with _dl_lock:
+            _save_downloads([{k: j[k] for k in ("id", "url", "format", "file", "title", "size", "duration", "created")}] + downloads())
     except Exception as e:
         traceback.print_exc()
         _set(j, status="error", error=str(e)[:800])
+
+
+_dl_lock = threading.RLock()
+
+
+def downloads():
+    idx = DOWNLOADS / "index.json"
+    with _dl_lock:
+        return json.loads(idx.read_text(encoding="utf-8")) if idx.exists() else []
+
+
+def _save_downloads(data):
+    (DOWNLOADS / "index.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def drop_download(name):
+    """Una descarga que se borró: sale de la lista y de los terminados de la Cola."""
+    with _dl_lock:
+        ds = downloads()
+        if any(x["file"] == name for x in ds):
+            _save_downloads([x for x in ds if x["file"] != name])
+    tidy([j["id"] for j in list_jobs() if j["kind"] == "download" and j["status"] == "listo" and j.get("file") == name])
 
 
 # ------------------------------------------------------------ hilos
@@ -398,6 +453,7 @@ def _download(pid):
         path, title = _fetch(pid, p, d)
         store.update(pid, lambda q: (q["source"].update(file=str(path)),
                                      q.update(name=title if q.get("name", "").startswith("http") else q.get("name") or title)))
+        chat.remember(pid)
         enqueue_project(pid)
     except Gone:
         pass

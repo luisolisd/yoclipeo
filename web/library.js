@@ -19,6 +19,7 @@ function library(cur = "") {
   }
   const folderMenu = (btn, f) => menu(btn, [
     { label: "Renombrar carpeta", icon: "pen", run: async () => { const r = await ask({ title: "Renombrar carpeta", ok: "Renombrar", fields: [{ name: "n", label: "Nombre", value: f.name, max: 40 }] }); if (r && r.n.trim()) { await api(`/api/folders/${f.id}`, { method: "PUT", json: { name: r.n } }); refresh(); } } },
+    { label: "Usar predeterminados de otra carpeta…", icon: "pin", run: guard(() => copyDefs({ to: f.id })) },
     { label: "Borrar carpeta", icon: "trash", bad: true, run: async () => { if (await ask({ title: `¿Borrar la carpeta «${f.name}»?`, text: "Sus proyectos no se borran: pasan a «Sin carpeta». Los predeterminados de la carpeta sí se borran.", ok: "Borrar carpeta", danger: true })) { await api(`/api/folders/${f.id}`, { method: "DELETE" }); if (cur === f.id) location.hash = "#/"; else refresh(); } } }]);
   async function loadFolders(force = false) {
     const r = await api("/api/folders"); FOLDERS = r.folders;
@@ -37,10 +38,11 @@ function library(cur = "") {
     $$("[data-fm]", box).forEach(b => b.onclick = () => folderMenu(b, folderOf(b.dataset.fm)));
     $("#fadd").onclick = guard(newFolder);
     const cf = folderOf(cur), head = $("#lhead");
-    head.innerHTML = cf ? `<h1 class="pname">${esc(cf.name)}</h1><input type="color" class="colorpick" value="${esc(cf.color)}" title="Color de la carpeta" aria-label="Color de la carpeta"><button class="btn gh sq sm" data-m aria-label="Opciones de la carpeta">${icon("more")}</button>`
+    head.innerHTML = cf ? `<h1 class="pname">${esc(cf.name)}</h1><input type="color" class="colorpick" value="${esc(cf.color)}" title="Color de la carpeta" aria-label="Color de la carpeta"><button class="btn sm" data-d>Usar predeterminados de…</button><button class="btn gh sq sm" data-m aria-label="Opciones de la carpeta">${icon("more")}</button>`
       : `<h1>${cur === "sin" ? "Sin carpeta" : "Biblioteca"}</h1>`;
     if (cf) {
       $(".colorpick", head).onchange = guard(async (e) => { await api(`/api/folders/${cf.id}`, { method: "PUT", json: { color: e.target.value } }); refresh(); });
+      $("[data-d]", head).onclick = guard(() => copyDefs({ to: cf.id }));
       $("[data-m]", head).onclick = (e) => folderMenu(e.currentTarget, cf);
     }
   }
@@ -78,7 +80,7 @@ function library(cur = "") {
         { head: "Mover a" }, ...FOLDERS.filter(x => x.id !== p.folder).map(x => ({ label: x.name, dot: x.color, run: async () => { await moveProject(p.id, x.id); refresh(); } })),
         ...(f ? [{ label: "Sin carpeta", dot: "var(--faint)", run: async () => { await moveProject(p.id, null); refresh(); } }] : []),
         { label: "Nueva carpeta…", icon: "plus", run: newFolder }, "-",
-        { label: "Borrar proyecto", icon: "trash", bad: true, run: async () => { if (await ask({ title: "¿Borrar este proyecto?", text: `Se borran «${p.name}», sus clips y todos sus archivos. No se puede deshacer.`, ok: "Borrar proyecto", danger: true })) { await api(`/api/projects/${p.id}`, { method: "DELETE" }); refresh(); } } }]); };
+        { label: "Borrar proyecto", icon: "trash", bad: true, run: async () => { if (await ask({ title: "¿Borrar este proyecto?", text: `Se borran «${p.name}», sus clips y todos sus archivos. No se puede deshacer.`, ok: "Borrar proyecto", danger: true })) { spDeleted(await api(`/api/projects/${p.id}`, { method: "DELETE" })); refresh(); spNotice($("#lspace")); } } }]); };
       box.appendChild(el);
     }
   }
@@ -86,6 +88,7 @@ function library(cur = "") {
   $("#lsearch").oninput = draw;
   $("#lnew").onclick = () => newSheet({ folder: cur });
   if (!cur) equipoNotice($("#lnotice"));
+  spNotice($("#lspace")); every(10000, () => spNotice($("#lspace")));
   async function loadLive() {
     const box = $("#llive"); if (!box) return;
     const l = await api("/api/directos"), sig = JSON.stringify([l, l.map(liveText)]); if (sig === lSig) return; lSig = sig;
@@ -145,9 +148,9 @@ function newSheet({ folder = "", file: startFile = null } = {}) {
     const p = parse(); info.classList.toggle("set", !!p.kind);
     info.innerHTML = p.kind === "file" ? `${icon("film", 16)}<span>${esc(file.name)} (${fmtSize(file.size)})</span><button type="button" class="btn gh sm" id="nofile">Quitar</button>`
       : p.kind === "path" ? `${icon("film", 16)}<span>Archivo de este PC. Se usa donde está, sin copiarlo.</span>`
-      : p.kind === "url" ? `${icon("link", 16)}<span>${live && p.v === liveUrl ? `Directo: ${esc(live.title)}` : `${p.site ? `Enlace de ${p.site}` : "Enlace"}. Se descarga a este PC.`}</span>` : "<span>También puedes soltar un video en cualquier parte de la ventana.</span>";
+      : p.kind === "url" ? `${icon("link", 16)}<span>${live && p.v === liveUrl ? `Directo: ${esc(live.title)}` : vod && p.v === liveUrl ? `${esc(vod.title)}, ${fmtLong(vod.duration)}. Se descarga a este PC.` : `${p.site ? `Enlace de ${p.site}` : "Enlace"}. Se descarga a este PC.`}</span>` : "<span>También puedes soltar un video en cualquier parte de la ventana.</span>";
     src.disabled = p.kind === "file"; const x = $("#nofile", info); if (x) x.onclick = () => { file = null; q("#file").value = ""; showSrc(); };
-    q("#dlbox").hidden = p.kind !== "url"; checkLive(p);
+    q("#dlbox").hidden = p.kind !== "url"; chatBox(); checkLive(p);
     if (p.kind === "url" && !folderTouched) {
       const low = p.v.toLowerCase(), site = ["kick", "twitch", "youtube", "tiktok"].find(s => low.includes(s)), f = site && FOLDERS.find(x => x.name.toLowerCase().includes(site));
       if (f && q("#o-folder").value !== f.id) { q("#o-folder").value = f.id; applyDefs(); }
@@ -172,10 +175,10 @@ function newSheet({ folder = "", file: startFile = null } = {}) {
   function checkLive(p) {
     const u = p.kind === "url" && (p.site === "YouTube" && /[?&]v=|youtu\.be\/.|\/(live|watch|shorts|@|c\/|channel)/.test(p.v) || /^https?:\/\/(www\.)?kick\.com\/[\w-]+(\/videos(\/[0-9a-f-]{36})?)?\/?([?#].*)?$/i.test(p.v)) ? p.v : "";
     if (u === liveUrl) { if (checking) info.insertAdjacentHTML("beforeend", `<span class="mut">Revisando si está en vivo…</span>`); return; }
-    liveUrl = u; clearTimeout(liveT); checking = null; setLive(null); if (!u) return;
+    liveUrl = u; clearTimeout(liveT); checking = null; setLive(null); setVod(null); if (!u) return;
     checking = new Promise(done => { liveT = setTimeout(async () => {
       let r = {}; try { r = await api("/api/directo?url=" + encodeURIComponent(u)); } catch (e) {}
-      if (u === liveUrl && d.isConnected) { checking = null; setLive(r.live ? r : null); showSrc(); } done();
+      if (u === liveUrl && d.isConnected) { checking = null; setLive(r.live ? r : null); setVod(r.vod || null); showSrc(); } done();
     }, 500); });
     info.insertAdjacentHTML("beforeend", `<span class="mut">Revisando si está en vivo…</span>`);
   }
@@ -208,13 +211,82 @@ function newSheet({ folder = "", file: startFile = null } = {}) {
   }
   for (const s of ["#l-from", "#l-to", "#l-hours", "#l-gb", "#o-download"]) q(s).addEventListener("input", drawLive);
 
+  // ---------- periodos de un video de Kick: se baja solo lo elegido
+  let vod = null, pers = [], drag = null;
+  const vmode = choice(q("#v-mode"), () => drawVod(true));
+  const hms = (s) => { s = Math.round(s); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+  // «1:20:00», «20:00» (minutos y segundos) o «20» (minutos)
+  const unhms = (v) => { const m = v.trim().match(/^(?:(\d{1,2}):)?(\d{1,3})(?::(\d{1,2}))?$/); if (!m) return null; if (m[3] === undefined && m[1] === undefined) return +m[2] * 60; return m[3] === undefined ? +m[1] * 60 + +m[2] : (+m[1] || 0) * 3600 + +m[2] * 60 + +m[3]; };
+  const shot = (t) => `/api/kick/cuadro?t=${Math.max(0, Math.round(t))}&url=${encodeURIComponent(liveUrl)}`;
+  function setVod(v) {
+    vod = v; q("#vodbox").hidden = !v; if (!v) return;
+    pers = [[0, v.duration]]; vmode.value = "all"; q("#v-strip").innerHTML = ""; drawVod(true);
+  }
+  const union = () => { const o = []; for (const [a, b] of [...pers].sort((x, y) => x[0] - y[0])) { const l = o[o.length - 1]; if (l && a <= l[1]) l[1] = Math.max(l[1], b); else o.push([a, b]); } return o; };
+  function vodInfo() {
+    const some = vmode.value === "some", len = (some ? union() : [[0, vod.duration]]).reduce((t, [a, b]) => t + b - a, 0);
+    const weigh = (sec) => { const r = { 480: 480, 720: 720, 1080: 1080 }[q("#o-download").value] || (sec > vod.long ? 720 : 1080), f = vod.q.filter(x => x.h <= r).pop() || vod.q[0]; return [f.h, f.gb_h * sec / 3600]; };
+    const gb = (x) => x < 1 ? Math.max(1, Math.round(x * 100)) * 10 + " MB" : x.toFixed(1) + " GB", [h, x] = weigh(len);
+    let t = `${some ? `${plural(pers.length, "periodo", "periodos")}, ${fmtLong(len)} de ${fmtLong(vod.duration)}. Pesa` : "Pesa"} cerca de ${gb(x)} en ${h}p${some && len < vod.duration - 2 ? `; todo pesaría ${gb(weigh(vod.duration)[1])}` : ""}.`;
+    if (some && len >= vod.duration - 2) t = "Arrastra los bordes o escribe las horas para dejar solo lo que quieres. " + t.replace(/^[^.]*\. /, "");
+    else if (some) t += ` Cada periodo puede empezar o terminar hasta 12 segundos antes o después.${pers.length > 1 ? " Se unen en un solo proyecto." : ""}`;
+    if (vod.free_gb - x * 1.8 < vod.keep_gb) t += ` No cabe: quedan ${vod.free_gb.toFixed(0)} GB libres.`;
+    q("#v-info").textContent = t; q("#v-add").disabled = !gapFor();
+  }
+  const bars = () => { $$(".vbar", d).forEach((el, n) => { const [a, b] = pers[n]; el.style.left = a / vod.duration * 100 + "%"; el.style.width = (b - a) / vod.duration * 100 + "%"; }); };
+  function rowText(n, only) {
+    const r = $$(".vrow", d)[n]; if (!r) return; const [a, b] = pers[n], [i, j] = $$("input", r);
+    if (only !== i) i.value = hms(a); if (only !== j) j.value = hms(b);
+    $(".len", r).textContent = fmtLong(b - a); clearTimeout(r._t);
+    r._t = setTimeout(() => { if (!d.isConnected) return; const [x, y] = $$("img", r), put = (im, t) => { const s = shot(t); if (im.dataset.s !== s) { im.dataset.s = s; im.classList.remove("got"); im.src = s; } }; put(x, a); put(y, b - 2); }, 250);
+  }
+  // mueve un borde (o el periodo entero) sin encimarse con los vecinos
+  function moveTo(n, side, t) {
+    const [a, b] = pers[n], lo = Math.max(0, ...pers.filter((x, k) => k !== n && x[1] <= a + .5).map(x => x[1])), hi = Math.min(vod.duration, ...pers.filter((x, k) => k !== n && x[0] >= b - .5).map(x => x[0]));
+    if (side === "a") pers[n][0] = Math.max(lo, Math.min(b - vod.min, t)); else if (side === "b") pers[n][1] = Math.min(hi, Math.max(a + vod.min, t));
+    else { const s = Math.max(lo, Math.min(hi - (b - a), t)); pers[n] = [s, s + b - a]; }
+  }
+  function drawVod(all) {
+    if (!vod) return; const some = vmode.value === "some"; q("#v-some").hidden = !some; vodInfo(); if (!some || !all) return;
+    if (!q("#v-strip").children.length) q("#v-strip").innerHTML = Array.from({ length: 8 }, (_, k) => `<img alt="" loading="lazy" src="${esc(shot(vod.duration * (k + .5) / 8))}">`).join("");
+    $$("#v-strip img", d).forEach(im => im.onerror = () => im.classList.add("no"));
+    q("#v-scale").innerHTML = [0, .25, .5, .75, 1].map(k => `<span>${hms(vod.duration * k)}</span>`).join("");
+    pers.sort((x, y) => x[0] - y[0]);
+    q("#v-bars").innerHTML = pers.map((_, n) => `<div class="vbar" data-n="${n}"><i data-s="a"></i><i data-s="b"></i></div>`).join(""); bars();
+    q("#v-rows").innerHTML = pers.map((_, n) => `<div class="vrow" data-n="${n}"><figure><img alt="Cómo empieza"></figure><label><span class="lb">Desde</span><input type="text" inputmode="numeric" autocomplete="off" aria-label="Periodo ${n + 1}, desde"></label><label><span class="lb">Hasta</span><input type="text" inputmode="numeric" autocomplete="off" aria-label="Periodo ${n + 1}, hasta"></label><figure><img alt="Cómo termina"></figure><span class="len mut small"></span><button type="button" class="btn gh sq sm" aria-label="Quitar el periodo ${n + 1}"${pers.length < 2 ? " hidden" : ""}>${icon("close", 14)}</button></div>`).join("");
+    $$(".vrow", d).forEach((r, n) => {
+      $$("img", r).forEach(im => { im.onload = () => im.classList.add("got"); im.onerror = () => im.classList.remove("got"); });
+      $$("input", r).forEach((el, k) => {
+        const side = "ab"[k], set = (t) => { moveTo(n, side, t); bars(); rowText(n); vodInfo(); };
+        el.onchange = () => { const t = unhms(el.value); set(t === null ? pers[n][k] : t); };
+        el.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); el.onchange(); } const s = { ArrowUp: 1, ArrowDown: -1 }[e.key]; if (s) { e.preventDefault(); set(pers[n][k] + s * (e.shiftKey ? 60 : 10)); } };
+      });
+      $("button", r).onclick = () => { pers.splice(n, 1); drawVod(true); }; rowText(n);
+    });
+  }
+  function gapFor() {          // el hueco más grande que queda libre
+    const u = union(); let best = null, at = 0; for (const [a, b] of [...u, [vod.duration, vod.duration]]) { if (a - at >= 60 && (!best || a - at > best[1] - best[0])) best = [at, a]; at = b; }
+    return pers.length < vod.max_n ? best : null;
+  }
+  q("#v-add").onclick = () => { const g = gapFor(); if (!g) return; const len = Math.min(600, (g[1] - g[0]) / 2), m = (g[0] + g[1]) / 2; pers.push([Math.round(m - len / 2), Math.round(m + len / 2)]); drawVod(true); };
+  q("#v-track").onpointerdown = (e) => {
+    const bar = e.target.closest(".vbar"); if (!bar || e.button) return; e.preventDefault();
+    const n = +bar.dataset.n, w = q("#v-track").getBoundingClientRect(), at = (x) => (x.clientX - w.left) / w.width * vod.duration, side = e.target.dataset.s || "m"; drag = { n, side, off: at(e) - pers[n][side === "b" ? 1 : 0] };
+    q("#v-track").setPointerCapture(e.pointerId); bar.classList.add("on");
+    q("#v-track").onpointermove = (x) => { if (!drag) return; moveTo(drag.n, drag.side, Math.round(at(x) - drag.off)); bars(); rowText(drag.n); vodInfo(); };
+    q("#v-track").onpointerup = q("#v-track").onpointercancel = () => { drag = null; bar.classList.remove("on"); q("#v-track").onpointermove = null; };
+  };
+  q("#o-download").addEventListener("input", () => drawVod());
+
   const setFile = (f) => { if (f) { file = f; src.value = ""; showSrc(); } };
   d._setFile = setFile;
   src.oninput = showSrc; q("#pick").onclick = () => q("#file").click(); q("#file").onchange = () => setFile(q("#file").files[0]);
 
   // ---------- opciones (salen de los predeterminados de la carpeta; lo que tocas a mano no se pisa)
   const touched = new Set();
-  const whole = choice(q("#o-whole"), (v) => $$(".whole-hide", d).forEach(el => el.hidden = v === "1"));
+  function chatBox() { q("#o-chatbox").hidden = parse().site !== "Kick" || q("#o-whole").dataset.value === "1"; }
+  q("#o-chat").checked = pref.get("chat-guia", "si") === "si";
+  const whole = choice(q("#o-whole"), (v) => { $$(".whole-hide", d).forEach(el => el.hidden = v === "1"); chatBox(); });
   const mode = choice(q("#o-mode"), () => touched.add("mode")), style = choice(q("#o-style"), (v) => { touched.add("style"); if (v === "dinamico") { q("#o-silence").checked = true; touched.add("remove_silence"); } });
   const ids = { language: "#o-lang", min_len: "#o-min", max_len: "#o-max", max_clips: "#o-n", remove_silence: "#o-silence", download: "#o-download" };
   for (const [k, s] of Object.entries(ids)) for (const ev of ["input", "change"]) q(s).addEventListener(ev, () => touched.add(k));
@@ -246,14 +318,16 @@ function newSheet({ folder = "", file: startFile = null } = {}) {
     const err = q("#newerr"), p = parse(); err.textContent = "";
     if (!p.kind) { err.textContent = "Pega un enlace, escribe una ruta o elige un video."; src.focus(); return; }
     const options = { whole: whole.value === "1", ...opts() };
+    if (!q("#o-chatbox").hidden) { options.chat_guide = q("#o-chat").checked; pref.set("chat-guia", q("#o-chat").checked ? "si" : "no"); }
     if (!options.whole && !(options.min_len >= 5 && options.max_len > options.min_len && options.max_len <= 180)) { err.textContent = "Revisa la duración: el mínimo debe ser menor que el máximo (5 a 180 s)."; return; }
     if (p.kind === "path") options.local_path = p.v;
     if (q("#o-folder").value) options.folder = q("#o-folder").value;
-    if (checking) { const b = q("#go"), l = b.textContent; b.disabled = true; b.textContent = "Revisando si está en vivo…"; await checking; if (!d.isConnected) return; b.disabled = false; b.textContent = live ? b.textContent : l; if (live) { q("#livebox").scrollIntoView({ block: "nearest" }); return; } }
+    if (checking) { const b = q("#go"), l = b.textContent; b.disabled = true; b.textContent = "Revisando si está en vivo…"; await checking; if (!d.isConnected) return; b.disabled = false; b.textContent = live ? b.textContent : l; if (vod) { q("#vodbox").scrollIntoView({ block: "nearest" }); return; } if (live) { q("#livebox").scrollIntoView({ block: "nearest" }); return; } }
     if (live) {
       const a = options.live = liveAsk();
       if (a.mode === "past" && !(a.to - a.from >= 60)) { err.textContent = "Revisa el horario: debe empezar antes de ahora y durar al menos 1 minuto."; return; }
     }
+    if (vod && p.kind === "url" && vmode.value === "some") { if (document.activeElement && document.activeElement.closest(".vrow")) document.activeElement.blur(); options.periods = union(); }
     const fd = new FormData(); if (file) fd.append("file", file); fd.append("url", p.kind === "url" ? p.v : ""); fd.append("options", JSON.stringify(options));
     const btn = q("#go"), label = btn.textContent; btn.disabled = true; busy = true;
     try {

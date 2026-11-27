@@ -3,7 +3,8 @@
 
 const YT_TERMS = "https://www.youtube.com/t/terms", G_PRIVACY = "https://policies.google.com/privacy", G_PERMS = "https://myaccount.google.com/permissions";
 const YT_SEES = { private: "Privado", unlisted: "Oculto", public: "Público" };
-const YT_ON = ["en cola", "exportando", "subiendo", "pausada"];
+const YT_ON = ["en cola", "exportando", "subiendo", "pausada"], YT_MANUAL = "a mano";
+const ytUploaded = (p) => !!p.video || p.status === YT_MANUAL;
 const ytExports = (ps, j) => j.kind === "export" && ps.some(p => p.status === "exportando" && p.pid === j.pid && p.cid === j.cid);   // esa exportación ya se cuenta como subida
 const ext = (url, txt) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${esc(txt)}</a>`;
 const ytDate = (d) => new Date(d).toLocaleString("es", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -109,7 +110,7 @@ async function ytPublish(pid, clips) {
     return false;
   }
   if (clips.length > 50) throw new Error("Elige hasta 50 clips a la vez.");
-  const before = (c) => mine.find(p => p.cid === c.id && (p.video || YT_ON.includes(p.status)));
+  const before = (c) => mine.find(p => p.cid === c.id && (ytUploaded(p) || YT_ON.includes(p.status)));
   clips = [...clips].sort((a, b) => a.start - b.start);      // en lote, en el orden del video
   let list = clips.map(c => ({ c, title: (c.title || "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 100), desc: (c.description || "").replace(/[<>]/g, ""), tags: (c.hashtags || []).map(t => t.startsWith("#") ? t : "#" + t).join(" "), old: before(c), cover: 0, dur: c.end - c.start }));
   const start = new Date(Date.now() + 3600e3); start.setMinutes(0, 0, 0); start.setHours(start.getHours() + 1);
@@ -189,7 +190,7 @@ async function ytPublish(pid, clips) {
     $("[data-list]", d).innerHTML = list.map((x, i) => `<div class="pubc" data-i="${i}"><i class="cvp"></i><div>
         ${list.length > 1 ? `<p class="mut small" style="margin:0 0 4px">${i + 1} de ${list.length}, en ${fmt(x.c.start)} del video</p>` : ""}<label class="fld"><span class="lb"><span>Título</span><output data-n></output></span><input type="text" maxlength="100" data-f="title" value="${esc(x.title)}"></label>
         ${list.length > 1 ? `<details><summary>Portada, descripción y hashtags</summary>` : ""}${coverBar(x)}<label class="fld"><span class="lb">Descripción</span><textarea rows="${list.length > 1 ? 2 : 3}" maxlength="4500" data-f="desc">${esc(x.desc)}</textarea></label><label class="fld"><span class="lb">Hashtags</span><input type="text" maxlength="400" data-f="tags" value="${esc(x.tags)}"></label>${list.length > 1 ? "</details>" : ""}
-        ${x.old ? `<p class="small pubold">${x.old.video ? `Ya lo subiste el ${ytDate(x.old.created * 1000)}` : "Ya se está subiendo"}: saldría repetido.</p>` : ""}<p class="small pubat" data-at="${i}" hidden></p></div>
+        ${x.old ? `<p class="small pubold">${x.old.status === YT_MANUAL ? "Ya lo subiste por tu cuenta" : x.old.video ? `Ya lo subiste el ${ytDate(x.old.created * 1000)}` : "Ya se está subiendo"}: saldría repetido.</p>` : ""}<p class="small pubat" data-at="${i}" hidden></p></div>
         ${list.length > 1 ? `<button type="button" class="btn gh sq sm" data-rm aria-label="Quitar de la lista">${icon("close", 14)}</button>` : ""}</div>`).join("");
     $$(".pubc", d).forEach(el => {
       const x = list[+el.dataset.i], n = $("[data-n]", el), cnt = () => n.textContent = `${x.title.length}/100`; cnt();
@@ -275,21 +276,36 @@ function ytState(p) {
   if (p.status === "subiendo") return `Subiendo, ${Math.round(p.progress)} %`;
   if (p.status === "procesando") return "Subido; YouTube lo está procesando";
   if (p.status === "pausada") return `En pausa, sigue el ${ytDate(p.resume_at * 1000)}`;
+  if (p.status === YT_MANUAL) return "Subido por ti";
   if (p.status === "cancelada") return "Cancelada";
   if (p.status === "error") return "No se publicó";
   if (p.publish_at) return new Date(p.publish_at) > new Date() ? `Programado para el ${ytDate(p.publish_at)}` : `Publicado el ${ytDate(p.publish_at)}`;
   return p.note ? p.note : p.privacy === "public" ? "Publicado" : p.privacy === "unlisted" ? "Subido como oculto" : "Subido en privado";
 }
-const ytSig = (ps) => JSON.stringify(ps.map(p => [p.id, p.status, p.progress, p.error, p.hidden, p.listed, p.resume_at, p.cover_state, p.cover_error]));
+const ytSig = (ps) => JSON.stringify(ps.map(p => [p.id, p.status, p.progress, p.error, p.hidden, p.listed, p.resume_at, p.cover_state, p.cover_error, p.video]));
 function ytRows(ps) {
   return ps.map(p => {
-    const on = YT_ON.includes(p.status), pub = p.video && !p.publish_at && p.privacy !== "private" && !p.note;
+    const on = YT_ON.includes(p.status), mine = p.status === YT_MANUAL, pub = p.video && (mine || !p.publish_at && p.privacy !== "private" && !p.note);
     const cvOk = p.video && ["procesando", "lista"].includes(p.status);
-    return `<div class="file ytf" data-pub="${p.id}"><i style="background-image:url('/api/projects/${p.pid}/thumb/${p.cid}')"></i><span class="n"${p.error ? ` style="white-space:normal"` : ""}><span title="${esc(p.title)}">${esc(p.title)}</span><small>${esc(ytState(p))}${p.channel ? ` · ${esc(p.channel.title)}` : ""}${p.playlist && p.playlist.id ? ` · ${p.listed === "si" ? "En la lista" : p.listed === "pendiente" ? "Agregando a la lista" : "Lista"} «${esc(p.playlist.title)}»` : ""}${cvOk ? { si: " · Portada puesta", pendiente: " · Portada en camino" }[p.cover_state] || "" : ""}</small>${cvOk && p.cover_error ? `<span class="${p.cover_state === "no" ? "err" : "mut small"}">${p.cover_state === "no" ? "Portada: " : ""}${esc(p.cover_error)}</span>` : ""}${p.listed === "no" ? `<span class="err">No entró a la lista: ${esc(p.list_error || "")}</span>` : ""}${p.error ? `<span class="err">${esc(p.error)}</span>` : ""}${p.status === "pausada" ? `<span class="mut small" style="white-space:normal">${esc(p.pause || "")} Sigue solo si ${esc(window.APP_NAME)} está abierto.</span>` : on ? `<div class="line" style="margin-top:6px"><i style="width:${p.progress}%"></i></div>` : ""}</span>
-      ${cvOk ? `<button class="btn sm gh" data-cover>${p.cover_state === "si" ? "Cambiar portada" : "Poner portada"}</button>` : ""}${p.video ? `<a class="btn sm" href="${pub ? `https://youtu.be/${encodeURIComponent(p.video)}` : `https://studio.youtube.com/video/${encodeURIComponent(p.video)}/edit`}" target="_blank" rel="noopener noreferrer">${pub ? "Ver" : "Abrir en Studio"}</a>` : ""}${p.listed === "no" ? `<button class="btn sm" data-do="lista">Reintentar la lista</button>` : ""}${!p.video && ["error", "cancelada", "pausada"].includes(p.status) ? `<button class="btn sm" data-do="reintentar">${p.status === "pausada" ? "Seguir ya" : "Reintentar"}</button>` : ""}${on ? `<button class="btn sm gh" data-do="cancelar">${p.stop ? "Cancelando…" : "Cancelar"}</button>` : `<button class="btn sm gh sq" data-do="quitar" aria-label="Quitar de la lista" title="Quitar de la lista">${icon("close", 14)}</button>`}</div>`;
+    return `<div class="file ytf" data-pub="${p.id}"><i style="background-image:url('/api/projects/${p.pid}/thumb/${p.cid}')"></i><span class="n"${p.error ? ` style="white-space:normal"` : ""}><span title="${esc(p.title)}">${esc(p.title)}</span><small>${esc(ytState(p))}${p.channel ? ` · ${esc(p.channel.title)}` : ""}${!mine && p.playlist && p.playlist.id ? ` · ${p.listed === "si" ? "En la lista" : p.listed === "pendiente" ? "Agregando a la lista" : "Lista"} «${esc(p.playlist.title)}»` : ""}${cvOk ? { si: " · Portada puesta", pendiente: " · Portada en camino" }[p.cover_state] || "" : ""}</small>${cvOk && p.cover_error ? `<span class="${p.cover_state === "no" ? "err" : "mut small"}">${p.cover_state === "no" ? "Portada: " : ""}${esc(p.cover_error)}</span>` : ""}${p.listed === "no" ? `<span class="err">No entró a la lista: ${esc(p.list_error || "")}</span>` : ""}${p.error ? `<span class="err">${esc(p.error)}</span>` : ""}${p.status === "pausada" ? `<span class="mut small" style="white-space:normal">${esc(p.pause || "")} Sigue solo si ${esc(window.APP_NAME)} está abierto.</span>` : on ? `<div class="line" style="margin-top:6px"><i style="width:${p.progress}%"></i></div>` : ""}</span>
+      ${cvOk ? `<button class="btn sm gh" data-cover>${p.cover_state === "si" ? "Cambiar portada" : "Poner portada"}</button>` : ""}${p.video ? `<a class="btn sm" href="${pub ? `https://youtu.be/${encodeURIComponent(p.video)}` : `https://studio.youtube.com/video/${encodeURIComponent(p.video)}/edit`}" target="_blank" rel="noopener noreferrer">${pub ? "Ver" : "Abrir en Studio"}</a>` : ""}${p.listed === "no" ? `<button class="btn sm" data-do="lista">Reintentar la lista</button>` : ""}${!p.video && ["error", "cancelada", "pausada"].includes(p.status) ? `<button class="btn sm" data-do="reintentar">${p.status === "pausada" ? "Seguir ya" : "Reintentar"}</button>` : ""}${!p.video && ["en cola", "error", "cancelada", "pausada"].includes(p.status) ? `<button class="btn sm gh" data-mine title="Lo subí por mi cuenta">Ya lo subí</button>` : ""}${mine ? `<button class="btn sm gh" data-mine>${p.video ? "Cambiar enlace" : "Poner enlace"}</button><button class="btn sm gh" data-do="deshacer">Deshacer</button>` : on ? `<button class="btn sm gh" data-do="cancelar">${p.stop ? "Cancelando…" : "Cancelar"}</button>` : `<button class="btn sm gh sq" data-do="quitar" aria-label="Quitar de la lista" title="Quitar de la lista">${icon("close", 14)}</button>`}</div>`;
   }).join("");
 }
+// La persona lo subió por su cuenta: deja de esperar y queda anotado.
+async function ytManual({ pub = null, pid, cid, title }) {
+  const edit = pub && pub.status === YT_MANUAL; let link = edit && pub.video ? `https://youtu.be/${pub.video}` : "";
+  for (;;) {
+    const r = await ask({ title: edit ? "Enlace del video" : "¿Ya lo subiste a YouTube?", text: edit ? `«${title}»` : `«${title}» queda como subido por ti y ${window.APP_NAME} ya no lo sube.`, ok: edit ? "Guardar" : "Ya lo subí", fields: [{ name: "link", label: "Enlace del video (opcional)", placeholder: "https://youtu.be/…", value: link, max: 300 }] });
+    if (!r) return false; link = r.link;
+    try { await api(pub ? `/api/publicaciones/${pub.id}/manual` : "/api/publicaciones/manual", { method: "POST", json: pub ? { link } : { pid, cid, link } }); return true; }
+    catch (e) { toast(e.message, true); if (!/enlace/.test(e.message)) return false; }
+  }
+}
 function ytBind(box, again) {
+  $$("[data-mine]", box).forEach(b => b.onclick = guard(async () => {
+    const i = b.closest("[data-pub]").dataset.pub, p = (await api("/api/publicaciones")).find(y => y.id === i);
+    if (p && await ytManual({ pub: p, title: p.title })) again();
+  }));
   $$("[data-cover]", box).forEach(b => b.onclick = guard(async () => {
     const i = b.closest("[data-pub]").dataset.pub, p = (await api("/api/publicaciones")).find(y => y.id === i);
     if (p && await ytCover(p)) again();

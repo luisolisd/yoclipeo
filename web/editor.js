@@ -21,8 +21,22 @@ async function editor(pid, cid) {
   $("#eprev").onclick = () => goClip(-1); $("#enext").onclick = () => goClip(1);
   $("#eprev").disabled = idx <= 0; $("#enext").disabled = idx >= order.length - 1;
 
+  $("#edel").onclick = guard(async () => {
+    $("#edel").disabled = true;
+    try {
+      const up = (await api(`/api/publicaciones?pid=${pid}&cid=${cid}`)).filter(p => ["en cola", "exportando", "subiendo", "pausada"].includes(p.status));
+      if (up.some(p => p.status === "subiendo" || p.status === "exportando")) return toast("Este clip se está subiendo a YouTube. Espera a que termine o cancela la subida.", true);
+      if (!(await ask({ title: "¿Quitar este clip?", text: `«${clip.title}». Se pierden sus ediciones. Los archivos ya exportados se quedan en su carpeta.${up.length ? " Está en la cola de YouTube y ya no se va a subir." : ""}`, ok: "Quitar", danger: true })) || dead) return;
+      clearTimeout(saveTimer); pending = {};
+      await api(`/api/projects/${pid}/clips/${cid}`, { method: "DELETE" }); pending = {};
+      for (const p of up) await api(`/api/publicaciones/${p.id}/cancelar`, { method: "POST" }).catch(() => {});
+      const c = order[idx + 1] || order[idx - 1]; toast("Clip quitado"); location.replace(c ? `#/p/${pid}/c/${c.id}` : `#/p/${pid}`);
+    } finally { const b = $("#edel"); if (b && !dead) b.disabled = false; }
+  });
+
   // ---------- monitor
   const tl = new Timeline($("#tl"), {
+    playing: () => pv.playing,
     seek: (src) => pv.plan && pv.seek(pv.tmap.toOut(src)),
     trimming: (s, e) => { $("#e-start").value = s.toFixed(2); $("#e-end").value = e.toFixed(2); durUpd(); },
     trim: (s, e) => { $("#e-start").value = s.toFixed(2); $("#e-end").value = e.toFixed(2); durUpd(); save({ start: s, end: e }, true); renderCtx(); },
@@ -31,7 +45,7 @@ async function editor(pid, cid) {
   const pv = new CliperPreview.Preview($("#cv"), (t) => {
     const el = $("#tcode"); if (!el) return;
     el.textContent = `${fmt(t)} / ${fmt(pv.duration)}`;
-    if (pv.tmap) tl.head(pv.tmap.toSrc(t));
+    if (pv.tmap) tl.head(pv.tmap.toSrc(t), t);
     highlightWord(t);
   });
   window.__pv = pv;
@@ -55,6 +69,7 @@ async function editor(pid, cid) {
     $$("#secs button").forEach(x => { const on = x.dataset.tab === id; x.classList.toggle("on", on); x.setAttribute("aria-selected", on); });
     $$(".tab").forEach(t => t.classList.toggle("on", t.id === id)); $(".panel").scrollTop = 0; pref.set("seccion", id);
     if (id === "t-corte") renderCtx();
+    if (id === "t-subs" && pv.plan) { syncTrack(pv.t); syncShow(); }
     if (id === "t-encuadre") drawSrc();
     pv.selBrand = id === "t-marca" ? selB : -1;
   };
@@ -66,11 +81,18 @@ async function editor(pid, cid) {
   async function refreshPlan() {
     const seq = ++planSeq, plan = await api(`/api/projects/${pid}/clips/${cid}/plan`, { method: "POST", json: {} });
     if (seq !== planSeq || dead) return;
-    pv.setPlan(plan); pushTl();
+    pv.setPlan(plan); pushTl(); chatUI(); syncShow();
   }
+  // lo que se adelanta (−) o atrasa (+) cada palabra, y cuándo sale en el clip
+  const shiftOf = (w) => Math.max(-10, Math.min(10, (+E.sub_shift || 0) + (+w.d || 0)));
+  let outs = [];
   function pushTl() {
     const p = pv.plan; if (!p || dead) return;
-    tl.set({ start: clip.start, end: clip.end, segs: p.segments, words: clip.words, ctx: ctxWords, title: p.title.on ? Math.min(p.title.until, p.duration) : 0,
+    outs = clip.words.map(w => { const k = shiftOf(w); return { s: pv.tmap.toOut(w.s) + k, e: pv.tmap.toOut(w.e) + k }; });
+    phr().forEach((ix, k, all) => { const nx = all[k + 1] && phStart(all[k + 1]); if (nx) ix.slice(1).forEach(n => { outs[n].s = Math.min(outs[n].s, nx - 0.001); }); });
+    const inClip = (t) => pv.tmap.toSrc(Math.min(pv.duration, Math.max(0, t)));
+    const words = clip.words.map((w, i) => { if (!shiftOf(w)) return w; const s = inClip(outs[i].s), e = inClip(outs[i].e); return e > s ? { ...w, s, e } : null; }).filter(Boolean);
+    tl.set({ start: clip.start, end: clip.end, segs: p.segments, words, ctx: ctxWords, title: p.title.on ? Math.min(p.title.until, p.duration) : 0,
       brand: p.brand || [], stickers: p.stickers || [], media: proj.media.duration, toSrc: (t) => pv.tmap.toSrc(t) });
     tl.head(pv.tmap.toSrc(pv.t));
   }
@@ -148,7 +170,8 @@ async function editor(pid, cid) {
   $("#elook").onclick = (e) => menu(e.currentTarget, [
     { label: "Aplicar a todo el proyecto…", hint: "Copia el estilo de este clip a los demás", icon: "layers", run: () => { $("#applyerr").textContent = ""; $("#applydlg").showModal(); } },
     { label: "Guardar como predeterminado…", hint: "Para los clips nuevos, en general o por carpeta", icon: "pin", run: openDef },
-    { label: "Usar mis predeterminados aquí", hint: "Reemplaza el estilo de este clip", icon: "redo", run: async () => { await flushSave(); await api(`/api/projects/${pid}/clips/${cid}/use-defaults`, { method: "POST" }); toast("Predeterminados aplicados a este clip"); route(); } }]);
+    { label: "Usar mis predeterminados aquí", hint: "Reemplaza el estilo de este clip", icon: "redo", run: async () => { await flushSave(); await api(`/api/projects/${pid}/clips/${cid}/use-defaults`, { method: "POST" }); toast("Predeterminados aplicados a este clip"); route(); } },
+    { label: "Usar predeterminados de otra carpeta…", hint: "En este clip o en todos los del proyecto", icon: "folder", run: guard(async () => { if (await useDefs({ pid, cid, folder: proj.folder, n: proj.clips.length, before: flushSave }) && !dead) route(); }) }]);
 
   // ---------- titular
   $("#etitle").textContent = clip.title; $("#e-title").value = clip.title;
@@ -171,12 +194,12 @@ async function editor(pid, cid) {
     const box = $("#words"); if (!box) return; box.innerHTML = ""; lastHi = -1;
     if (!clip.words.length) box.innerHTML = `<p class="mut small">No hay voz en este tramo.</p>`;
     clip.words.forEach((w) => {
-      const el = document.createElement("span"); el.className = "word" + (w.key ? " key" : "") + (w.w ? "" : " gone");
+      const el = document.createElement("span"); el.className = "word" + (w.key ? " key" : "") + (w.w ? "" : " gone") + (w.d ? " mv" : ""); if (w.d) el.title = `Movida ${shTxt(w.d)}`;
       el.innerHTML = `<span contenteditable="plaintext-only" spellcheck="false" role="textbox">${esc(w.w)}</span><b>${icon("star", 13)}<u style="text-decoration:none"></u></b>`;
       const sp = el.firstChild, b = $("b", el), lab = () => $("u", b).textContent = w.key ? "Quitar clave" : "Palabra clave"; lab();
-      sp.onfocus = () => { if (pv.plan) { pv.pause(); pv.seek(pv.tmap.toOut(w.s)); } };
+      sp.onfocus = () => { if (pv.plan) { pv.pause(); pv.seek(Math.max(0, pv.tmap.toOut(w.s) + shiftOf(w))); } };
       sp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); sp.blur(); } if (e.key === "Escape") { sp.textContent = w.w; sp.blur(); } };
-      sp.onblur = () => { const v = sp.textContent.trim(); if (v !== w.w) { w.w = v; el.classList.toggle("gone", !v); save({ words: clip.words }); } };
+      sp.onblur = () => { const v = sp.textContent.trim(), was = w.w; if (v !== was) { w.w = v; el.classList.toggle("gone", !v); save({ words: clip.words }); if (v && was) repHint(was, v, w); } };
       b.onpointerdown = (e) => { e.preventDefault(); w.key = !w.key; el.classList.toggle("key", w.key); lab(); save({ words: clip.words }); };
       box.append(el, " ");
     });
@@ -184,15 +207,119 @@ async function editor(pid, cid) {
   let lastHi = -1;
   function highlightWord(t) {
     if (!pv.plan) return;
-    const src = pv.tmap.toSrc(t); let i = -1;
-    for (let k = 0; k < clip.words.length; k++) if (clip.words[k].s <= src + 0.02) i = k;
-    if (i >= 0 && src > clip.words[i].e + 0.6) i = -1;
+    let i = -1;
+    for (let k = 0; k < outs.length; k++) if (outs[k].s <= t + 0.02 && (i < 0 || outs[k].s >= outs[i].s)) i = k;
+    if (i >= 0 && t > outs[i].e + 0.6) i = -1;
+    syncTrack(t);
     if (i === lastHi) return;
     const box = $("#words"), ws = box ? box.querySelectorAll(".word") : []; if (!ws.length) return;
     if (lastHi >= 0 && ws[lastHi]) ws[lastHi].classList.remove("now");
     if (i >= 0 && ws[i]) { ws[i].classList.add("now"); if (pv.playing) { const r = ws[i].offsetTop - box.offsetTop; if (r < box.scrollTop || r > box.scrollTop + box.clientHeight - 60) box.scrollTop = r - box.clientHeight / 3; } }
     lastHi = i;
   }
+
+  // ---------- reemplazar palabras iguales
+  const rep = { seq: 0, timer: null, done: null, n: null, auto: false };
+  const repWhere = choice($("#repwhere"), () => repUI());
+  const core = (x) => x.normalize("NFC").replace(/^[^\p{L}\p{N}_]+|[^\p{L}\p{N}_]+$/gu, "");
+  const repHits = (idx) => $$("#words .word").forEach((el, k) => el.classList.toggle("hit", idx.includes(k)));
+  function repUI() {
+    const box = $("#repbox"); if (!box || dead) return;
+    const find = $("#repfind").value.trim(), to = $("#repto").value.trim(), n = rep.n, all = repWhere.value === "all", k = n ? (all ? n.all : n.clip) : 0;
+    $("#repinfo").textContent = !find || !n ? "" : all ? (n.all ? `${plural(n.all, "vez", "veces")} en ${plural(n.clips, "clip", "clips")}.${to ? " También se corrige en los clips que hagas después." : ""}` : `No sale en ningún clip.${to ? " Se corrige en los que hagas después." : ""}`)
+      : n.clip ? `${plural(n.clip, "vez", "veces")} en este clip${n.all > n.clip ? `; ${n.all} en todo el proyecto` : ""}.` : n.all ? `En este clip no. En los otros sale ${plural(n.all, "vez", "veces")}.` : "No sale en ningún clip.";
+    $("#repgo").textContent = find && n && !to ? "Quitar del subtítulo" : "Reemplazar";
+    $("#repgo").disabled = !find || !n || (!k && !(all && to)) || find === to;
+    $("#repundo").hidden = !rep.done;
+  }
+  async function repLook() {
+    const seq = ++rep.seq, find = $("#repfind").value.trim();
+    if (!find) { rep.n = null; repHits([]); return repUI(); }
+    try {
+      await flushSave(); const n = await api(`/api/projects/${pid}/clips/${cid}/palabras`, { method: "POST", json: { find } });
+      if (dead || seq !== rep.seq) return; rep.n = n; repHits($("#repbox").hidden ? [] : n.idx); repUI();
+    } catch (e) { if (!dead && seq === rep.seq) { rep.n = null; repUI(); $("#repinfo").textContent = e.message; } }
+  }
+  const repSoon = () => { rep.n = null; clearTimeout(rep.timer); rep.timer = setTimeout(repLook, 220); repUI(); };
+  const repShow = (on) => { $("#repbox").hidden = !on; $("#repopen").setAttribute("aria-expanded", on); $("#repopen").classList.toggle("on", on); if (on) repLook(); else { rep.seq++; repHits([]); } };
+  // al corregir una a mano: si hay más iguales en el clip, queda listo para cambiarlas todas
+  function repHint(was, now, self) {
+    const a = core(was).toLowerCase(); if (!a || /\s/.test(was) || a === core(now).toLowerCase() && core(was) === core(now)) return;
+    if (!clip.words.some(w => w !== self && core(w.w).toLowerCase() === a && core(w.w) !== core(now))) return;
+    if (!$("#repbox").hidden && $("#repfind").value.trim() && !rep.auto) return;
+    setTimeout(() => { if (dead) return; $("#repfind").value = core(was); $("#repto").value = core(now) || now; rep.done = null; rep.auto = true; repWhere.value = "clip"; repShow(true); }, 250);
+  }
+  $("#repopen").onclick = () => { const on = $("#repbox").hidden; if (on) { const s = String(getSelection()).trim(); if (s && s.length <= 80 && $("#words").contains(getSelection().anchorNode)) $("#repfind").value = core(s); } rep.auto = false; repShow(on); if (on) $("#repfind").focus(); };
+  $("#repclose").onclick = () => repShow(false);
+  $("#repbox").onkeydown = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); repShow(false); $("#repopen").focus(); } };
+  $("#repfind").oninput = () => { rep.auto = false; repSoon(); }; $("#repto").oninput = repUI;
+  async function repReload() {
+    const c = await api(`/api/projects/${pid}/clips/${cid}`); if (dead) return;
+    clip.words = c.words; clip.emojis = c.emojis; delete TRANS[pid]; renderWords(); renderEmojis(); loadAround(); await refreshPlan(); saved("Guardado");
+  }
+  $("#repbox").onsubmit = guard(async (e) => {
+    e.preventDefault(); const find = $("#repfind").value.trim(), to = $("#repto").value.trim(), all = repWhere.value === "all";
+    if (!find || $("#repgo").disabled) return;
+    $("#repgo").disabled = true;
+    try {
+      await flushSave();
+      const r = await api(`/api/projects/${pid}/clips/${cid}/palabras`, { method: "PUT", json: { find, to, all } }); if (dead) return;
+      rep.done = r.clips || r.tr ? r.done : null; await repReload(); if (dead) return;
+      toast(r.n ? `${to ? "Cambiada" : "Quitada"} ${plural(r.n, "vez", "veces")}${all && r.clips > 1 ? ` en ${r.clips} clips` : ""}` : r.tr ? "Corregida para los clips que hagas después" : "Ya estaba escrita así");
+      await repLook();
+    } finally { if (!dead) repUI(); }
+  });
+  $("#repundo").onclick = guard(async () => {
+    $("#repundo").disabled = true;
+    try { await flushSave(); await api(`/api/projects/${pid}/palabras/deshacer`, { method: "PUT", json: { done: rep.done } }); rep.done = null; if (dead) return; await repReload(); toast("Deshecho"); await repLook(); }
+    finally { const b = $("#repundo"); if (b) b.disabled = false; if (!dead) repUI(); }
+  });
+  cleanup.push(() => clearTimeout(rep.timer));
+
+  // ---------- sincronía de los subtítulos
+  const shTxt = (v) => `${v < 0 ? "−" : v > 0 ? "+" : ""}${Math.abs(v).toFixed(Math.round(Math.abs(v) * 100) % 10 ? 2 : 1).replace(".", ",")} s`;
+  const what = choice($("#e-syncwhat"), () => { syncAt = -1; pv.plan && syncTrack(pv.t); syncShow(); });
+  let syncAt = -1, syncHold = 0, syncSaid = -9e9;       // frase elegida; un momento fija tras moverla, aunque ya no esté bajo el cabezal
+  const phr = () => (pv.plan && pv.plan.phrases || []).filter(ix => ix.every(k => clip.words[k]));
+  const phStart = (ix) => outs[ix[0]] ? outs[ix[0]].s : 0;
+  function syncTrack(t) {
+    if (what.value === "all" || performance.now() < syncHold || !$("#t-subs.on")) return;
+    const all = phr(); let at = all.length ? 0 : -1;
+    for (let k = 0; k < all.length; k++) if (phStart(all[k]) <= t + 0.04) at = k;
+    if (at !== syncAt) { syncAt = at; syncShow(); }
+  }
+  function syncShow() {
+    if (dead || !$("#syncbox")) return;
+    const all = phr(), one = what.value !== "all", ix = one ? all[syncAt] : null;
+    if (one && !ix && all.length) { syncAt = -1; if (pv.plan) syncTrack(pv.t); }
+    const cur = one ? all[syncAt] : null;
+    $("#syncphrase").hidden = $("#synchint").hidden = !one;
+    if (one) {
+      $("#synctext").textContent = cur ? `${cur.map(k => clip.words[k].w).join(" ")}` : "No hay frases en este clip";
+      $("#syncprev").disabled = !cur || syncAt <= 0; $("#syncnext").disabled = !cur || syncAt >= all.length - 1;
+    }
+    $("#syncval").textContent = shTxt(one ? (cur ? +clip.words[cur[0]].d || 0 : 0) : +E.sub_shift || 0);
+    const off = !E.subs_on || (one ? !cur : !clip.words.length);
+    $$("#syncn button").forEach(b => b.disabled = off);
+    $("#syncreset").hidden = !(+E.sub_shift) && !clip.words.some(w => w.d);
+  }
+  const syncGo = (at) => { const ix = phr()[at]; if (!ix) return; pv.pause(); syncAt = at; syncHold = performance.now() + 400; pv.seek(Math.min(Math.max(0, phStart(ix)) + 0.03, Math.max(0, pv.duration - 0.05))); syncShow(); };
+  $("#syncprev").onclick = () => syncGo(syncAt - 1); $("#syncnext").onclick = () => syncGo(syncAt + 1);
+  const lim = (v) => +Math.max(-10, Math.min(10, v)).toFixed(2);
+  const syncMarks = () => $$("#words .word").forEach((el, k) => { const w = clip.words[k]; if (!w) return; el.classList.toggle("mv", !!w.d); el.title = w.d ? `Movida ${shTxt(w.d)}` : ""; });
+  $$("#syncn button").forEach(b => b.onclick = () => {
+    const d = +b.dataset.sh;
+    if (what.value === "all") { E.sub_shift = lim((+E.sub_shift || 0) + d); save({ edit: { sub_shift: E.sub_shift } }); pushTl(); return syncShow(); }
+    const all = phr(), ix = all[syncAt]; if (!ix) return;
+    const to = what.value === "one" ? ix : all.slice(syncAt).flat(), base = +clip.words[ix[0]].d || 0, at = phStart(ix), prev = all[syncAt - 1], next = what.value === "one" && all[syncAt + 1];
+    // una frase no puede rebasar a la de al lado
+    const lo = prev ? phStart(prev) + 0.1 - at : -99, hi = next ? phStart(next) - 0.1 - at : 99, k = +Math.min(Math.max(lim(base + d) - base, Math.min(0, lo)), Math.max(0, hi)).toFixed(2);
+    if (Math.abs(k) < 0.01) { if (performance.now() - syncSaid < 2500) return; syncSaid = performance.now(); return toast(Math.abs(base + d) > 10 ? "Más de 10 segundos no se puede." : `Ya toca la frase ${d < 0 ? "anterior" : "siguiente"}.`); }
+    for (const n of to) { const w = clip.words[n], v = lim((+w.d || 0) + k); if (v) w.d = v; else delete w.d; }
+    pushTl(); syncMarks(); save({ words: clip.words }); syncGo(syncAt);
+    syncHold = performance.now() + 1500;
+  });
+  $("#syncreset").onclick = () => { E.sub_shift = 0; clip.words.forEach(w => delete w.d); pushTl(); syncMarks(); save({ words: clip.words, edit: { sub_shift: 0 } }); syncShow(); toast("Los subtítulos volvieron a su tiempo"); };
 
   // ---------- corte
   const durUpd = () => { const el = $("#e-dur"); if (el) el.textContent = `${(+$("#e-end").value - +$("#e-start").value).toFixed(1)} s`; };
@@ -387,18 +514,60 @@ async function editor(pid, cid) {
   cvEl.onpointercancel = () => { bdrag = null; downAt = null; };
   loadBrand();
 
+  // ---------- chat de Kick (solo en videos de Kick)
+  $("#tabchat").hidden = !proj.chat; $$(".onlychat").forEach(el => { el.hidden = !proj.chat; });
+  E.chat_names ??= true; E.chat_count ??= true; E.chat_safe ??= true; bindCheck("#e-chat-safe", "chat_safe");
+  bindCheck("#e-chat-names", "chat_names"); bindCheck("#e-chat-count", "chat_count");
+  $("#e-chat-on").checked = !!E.chat_on; $("#e-chat-on").onchange = () => { chatTried = ""; setEdit("chat_on", $("#e-chat-on").checked); };
+  segBind("#e-chat-mode", "chat_mode"); $$("#e-chat-side button").forEach(b => b.onclick = () => { setEdit("chat_x", null); setEdit("chat_side", b.dataset.v); });
+  slider("#e-chat-size", "chat_size", 38); slider("#e-chat-lead", "chat_lead", 0, (v) => v ? `${v > 0 ? "" : "−"}${Math.abs(v)} s` : "0 s");
+  let chatTried = "", chatSig = "", chatBusy = false;
+  const chatSay = (t, bad) => { const el = $("#chatstate"); el.hidden = !t; el.textContent = t; el.style.color = bad ? "var(--bad)" : ""; };
+  async function readChat() {
+    if (chatBusy || dead) return; chatBusy = true; chatTried = `${clip.start}-${clip.end}`; chatSay("Leyendo el chat de Kick…");
+    const tick = setInterval(async () => { try { const { wait } = await api("/api/chat/estado"); if (chatBusy && !dead) chatSay(wait ? `Kick pidió ir más despacio. Sigue solo en ${wait} s.` : "Leyendo el chat de Kick…"); } catch (e) {} if (!chatBusy || dead) clearInterval(tick); }, 2000);
+    try { const r = await api(`/api/projects/${pid}/clips/${cid}/chat`, { method: "POST" }); chatBusy = false; if (dead) return; chatSay(r.n ? "" : "En este momento del directo nadie escribió."); await refreshPlan(); }
+    catch (e) { chatBusy = false; if (dead) return; const el = $("#chatstate"); chatSay(e.message, true); const b = document.createElement("button"); b.className = "btn sm"; b.type = "button"; b.textContent = "Reintentar"; b.style.marginLeft = "8px"; b.onclick = readChat; el.append(b); }
+  }
+  function chatUI() {
+    const ch = pv.plan && pv.plan.chat; if (!proj.chat || dead) return;
+    $("#chatopts").hidden = !E.chat_on; $("#chatnames").hidden = E.chat_mode === "emotes"; if (!E.chat_on) { chatSay(""); return; }
+    if (!ch) return;
+    for (const [id, v, txt] of [["#e-chat-y", ch.y, Math.round(ch.y / 19.2) + " %"], ["#e-chat-x", ch.px, ch.px + " %"]]) if (document.activeElement !== $(id)) { $(id).value = v; $(id).closest(".fld").querySelector("output").textContent = txt; }
+    if (ch.missing && chatTried !== `${clip.start}-${clip.end}`) readChat();
+    const s = JSON.stringify([ch.mode, ch.missing, ch.items.map(i => [i.id, i.s]), E.chat_hide]); if (s === chatSig) return; chatSig = s;
+    const box = $("#chatlist"); box.innerHTML = "";
+    const n = (E.chat_hide || []).length;
+    if (ch.mode === "emotes") box.innerHTML = `<p class="mut small">En este modo solo salen los emotes${ch.parts.length ? "" : ", y en este clip no hubo"}.</p>`;
+    else if (!ch.items.length && !ch.missing) box.innerHTML = `<p class="mut small">Ningún mensaje con texto pasó los filtros.</p>`;
+    for (const it of ch.items) {
+      const r = document.createElement("div"); r.className = "cm";
+      r.innerHTML = `<button class="lnk num" type="button">${fmt(it.s)}</button><span>${it.u ? `<b>${esc(it.u)}</b> ` : ""}${esc(it.x).replace(/\[e:(\d+)\]/g, (m, i) => `<i class="em" style="background-image:url(/api/img/emote/${i})"></i>`)}</span><button class="btn gh sq sm" type="button" title="Quitar de este clip" aria-label="Quitar este mensaje">${icon("close", 14)}</button>`;
+      const [go, rm] = $$("button", r); go.onclick = () => { pv.pause(); pv.seek(Math.max(0, it.s) + .3); }; rm.onclick = () => setEdit("chat_hide", [...(E.chat_hide || []), it.id]);
+      box.appendChild(r);
+    }
+    if (n) { const b = document.createElement("button"); b.className = "btn sm gh"; b.type = "button"; b.textContent = `Volver a poner ${plural(n, "mensaje quitado", "mensajes quitados")}`; b.onclick = () => setEdit("chat_hide", []); box.appendChild(b); }
+  }
+  $("#e-chat-y").oninput = () => { $("#e-chat-y").closest(".fld").querySelector("output").textContent = Math.round($("#e-chat-y").value / 19.2) + " %"; setEdit("chat_y", +$("#e-chat-y").value); };
+  $("#e-chat-x").oninput = () => { $("#e-chat-x").closest(".fld").querySelector("output").textContent = $("#e-chat-x").value + " %"; setEdit("chat_x", +$("#e-chat-x").value); };
+  if (proj.chat) api("/api/chat/palabras").then(ws => { if (!dead) $("#chatblock").value = ws.join("\n"); }).catch(() => {});
+  $("#chatblock").onchange = guard(async () => { const ws = await api("/api/chat/palabras", { method: "PUT", json: { words: $("#chatblock").value.split("\n") } }); if (dead) return; $("#chatblock").value = ws.join("\n"); await refreshPlan(); });
+
   // ---------- salida: publicar y exportar
   $("#e-desc").value = clip.description || ""; $("#e-desc").oninput = () => save({ description: $("#e-desc").value });
   $("#e-tags").value = (clip.hashtags || []).join(" "); $("#e-tags").oninput = () => save({ hashtags: $("#e-tags").value.split(/\s+/).filter(Boolean) });
-  $("#e-reason").innerHTML = clip.reason ? `${potBars(clip.score)} <b>${clip.score}</b> de 100, ${esc((clip.category || "").toLowerCase())}. ${esc(clip.reason)}` : ""; $("#reasonbox").hidden = !clip.reason;
+  $("#e-reason").innerHTML = clip.reason ? `${potBars(clip.score)} <b>${clip.score}</b> de 100, ${esc((clip.category || "").toLowerCase())}. ${esc(clip.reason)}${clip.chat_heat ? ` ${esc(heatTxt(clip.chat_heat))}` : ""}` : ""; $("#reasonbox").hidden = !clip.reason;
   $("#copypub").onclick = guard(async () => { await navigator.clipboard.writeText(`${clip.title}\n\n${$("#e-desc").value}\n\n${$("#e-tags").value}`); toast("Copiado: titular, descripción y hashtags"); });
   const doExport = async (q) => { await flushSave(); await exportClip(pid, cid, q); goTab("t-salida"); toast("En la cola de exportación"); pollJobs(); };
   $$(".quals button").forEach(b => b.onclick = guard(() => doExport(b.dataset.q)));
   $("#eexport").onclick = (e) => menu(e.currentTarget, [{ head: "Exportar este clip" }, ...QUALS.map(([k, h]) => ({ label: k === "mp3" ? "MP3" : k, hint: h, icon: "out", run: () => doExport(k) }))]);
   $("#eyt").onclick = guard(async () => { await flushSave(); if (await ytPublish(pid, [await api(`/api/projects/${pid}/clips/${cid}`)])) pollPubs(); });
   let pubSig = "";
+  $("#emine").onclick = guard(async () => { if (await ytManual({ pid, cid, title: clip.title })) { pubSig = ""; pollPubs(); } });
   async function pollPubs() {
-    let ps; try { ps = (await api(`/api/publicaciones?pid=${pid}&cid=${cid}`)).filter(p => !p.hidden); } catch (e) { return; }
+    let ps; try { ps = await api(`/api/publicaciones?pid=${pid}&cid=${cid}`); } catch (e) { return; }
+    if ($("#emine")) $("#emine").hidden = ps.some(p => ytUploaded(p) || ["exportando", "subiendo"].includes(p.status) || !p.hidden && YT_ON.includes(p.status));
+    ps = ps.filter(p => !p.hidden);
     const box = $("#epubs"), s = ytSig(ps); if (!box || s === pubSig) return; pubSig = s; box.innerHTML = ytRows(ps); ytBind(box, () => { pubSig = ""; pollPubs(); });
   }
   timers.push(setInterval(pollPubs, 2000));
@@ -427,10 +596,11 @@ async function editor(pid, cid) {
     on("#e-font", E.font); on("#e-color", E.color); on("#e-tstyle", E.title_style || "caja"); on("#e-tfont", E.title_font || "clasica"); on("#e-tcolor", E.title_color || "blanco");
     $$(".lay").forEach(l => l.classList.toggle("on", l.classList.contains(`lay-${lay}`))); $$(".manual-only").forEach(el => el.classList.toggle("on", E.framing === "manual"));
     $(".smode-recuadros").classList.toggle("on", smode === "recuadros"); $(".smode-apilado").classList.toggle("on", smode === "apilado"); on("#e-sswap", E.streamer && E.streamer.swap ? "1" : "0");
-    $("#tcolorhint").textContent = ["oscura", "contorno"].includes(E.title_style) ? "de la letra" : "de la caja"; $("#dynhint").hidden = E.style !== "dinamico";
+    on("#e-chat-mode", E.chat_mode || "mensajes"); on("#e-chat-side", E.chat_side || "izq");
+    $("#tcolorhint").textContent = ["oscura", "contorno"].includes(E.title_style) ? "de la letra" : "de la caja"; $("#dynhint").hidden = E.style !== "dinamico"; syncShow();
   }
   syncUI(); renderWords(); renderEmojis(); renderExports(); pollJobs(); pollPubs(); if (E.layout === "split") loadOthers();
-  const tab = pref.get("seccion", "t-titulo"); goTab(document.getElementById(tab) ? tab : "t-titulo");
+  const tab = pref.get("seccion", "t-titulo"); goTab(document.getElementById(tab) && (proj.chat || tab !== "t-chat") ? tab : "t-titulo");
   loadAround();
   await refreshPlan();
 }

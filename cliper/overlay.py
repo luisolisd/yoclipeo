@@ -3,6 +3,8 @@
 El navegador replica las mismas reglas en web/render.js para la vista previa.
 """
 import math
+import re
+from collections import OrderedDict
 from functools import lru_cache
 
 import numpy as np
@@ -282,6 +284,163 @@ def sticker_scale(t, s, e):
     if t > e - 0.18:
         sc *= max(0.0, (e - t) / 0.18)
     return max(0.0, sc), math.sin((t - s) * 6) * 4  # escala, ligera rotación
+
+
+# ------------------------------------------------------------ chat
+
+CHAT_FONT = {False: r"C:\Windows\Fonts\segoeui.ttf", True: r"C:\Windows\Fonts\segoeuib.ttf"}
+_PIECE = re.compile(r"\[e:(\d{1,12})\]|([\U0001F000-\U0001FAFF\u2600-\u27BF\u2B50\u2B55\u231A\u231B\u23E9-\u23FA])[\uFE0F\U0001F3FB-\U0001F3FF]?(?:\u200D.\uFE0F?)*")
+
+
+@lru_cache(maxsize=32)
+def chat_font(size, bold=False):
+    try:
+        return ImageFont.truetype(CHAT_FONT[bold], size)
+    except OSError:
+        return font("clasica", size)
+
+
+def chat_text_w(text, size, bold=True):
+    return round(chat_font(size, bold).getlength(text))
+
+
+_strips = OrderedDict()
+
+
+def _cells(i):
+    """Los cuadros de un emote ya abiertos (leer el archivo en cada fotograma era lo más lento)."""
+    hit = _strips.get(i)
+    if hit is None:
+        from . import chat
+        m, f = chat.emote(i), chat.strip(i)
+        if not m or not f:
+            return None
+        try:
+            with Image.open(f) as s:
+                s = s.convert("RGBA")
+        except OSError:
+            return None
+        hit = _strips[i] = [s.crop((k * m["w"], 0, (k + 1) * m["w"], m["h"])) for k in range(m["n"])]
+        while len(_strips) > 40:
+            _strips.popitem(last=False)
+    return hit
+
+
+def emote_img(i, frame=0, height=96, rot=0, alpha=8):
+    """Un cuadro de un emote (alpha de 0 a 8). None si no se pudo bajar."""
+    c = _cells(i)
+    return _emote(i, frame % len(c), height, rot, alpha) if c else None
+
+
+@lru_cache(maxsize=1500)
+def _emote(i, frame, height, rot, alpha):
+    c = _cells(i)
+    if not c:
+        return None
+    im = c[frame % len(c)]
+    im = im.resize((max(1, round(im.width * height / im.height)), height), Image.LANCZOS)
+    if rot:
+        im = im.rotate(rot, expand=True, resample=Image.BICUBIC)
+    if alpha < 8:
+        im.putalpha(im.getchannel("A").point(lambda v: v * max(0, alpha) // 8))
+    return im
+
+
+def _chat_color(c):
+    """El color de la persona, aclarado si no se lee sobre la caja oscura."""
+    r, g, b = hex2rgb(c) if re.fullmatch(r"#[0-9a-fA-F]{6}", c or "") else (126, 221, 214)
+    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    k = max(0.0, (0.5 - lum) / 0.5) * .75
+    return tuple(int(v + (255 - v) * k) for v in (r, g, b))
+
+
+@lru_cache(maxsize=1024)
+def chat_img(user, color, text, size, width):
+    """Un mensaje del chat en su caja (hasta 3 líneas)."""
+    reg, bold = chat_font(size), chat_font(size, True)
+    pad, eh, lh, sp = round(size * .42), round(size * 1.3), round(size * 1.38), reg.getlength(" ")
+    toks = [("n", user, bold.getlength(user))] if user else []
+    for word in text.split(" "):
+        glue, at = False, 0
+        for m in [*_PIECE.finditer(word), None]:
+            part = word[at:m.start()] if m else word[at:]
+            if part:
+                toks.append(("t", part, reg.getlength(part), glue))
+                glue = True
+            if m:
+                at = m.end()
+                im = emote_img(m[1], 0, eh) if m[1] else emoji_img(m[2], round(size * 1.1))
+                if im is not None:
+                    toks.append(("i", im, im.width, glue))
+                    glue = True
+    lines, cur, x, room, cut = [], [], 0.0, width - pad * 2, False
+    for tk in toks:
+        kind, val, w = tk[:3]
+        gap = 0 if not cur or (len(tk) > 3 and tk[3]) else sp
+        while True:
+            if x + gap + w <= room:
+                cur.append((kind, val, x + gap))
+                x += gap + w
+                break
+            if kind != "i" and w > room:       # palabra más larga que la caja: se parte
+                n = len(val)
+                while n > 1 and x + gap + (bold if kind == "n" else reg).getlength(val[:n]) > room:
+                    n -= 1
+                cur.append((kind, val[:n], x + gap))
+                val = val[n:]
+                w = (bold if kind == "n" else reg).getlength(val)
+            lines.append(cur)
+            cur, x, gap = [], 0.0, 0
+            if len(lines) == 3:
+                cut = True
+                break
+        if cut:
+            break
+    if cur and not cut:
+        lines.append(cur)
+    ends = [max((x + (v.width if k == "i" else (bold if k == "n" else reg).getlength(v)) for k, v, x in l), default=0) for l in lines]
+    dots = reg.getlength("…") if cut else 0
+    bw = int(min(width, max([e + (dots if i == len(lines) - 1 else 0) for i, e in enumerate(ends)], default=0) + pad * 2 + 1))
+    bh = lh * len(lines) + pad
+    img = Image.new("RGBA", (max(2, bw), max(2, bh)), (0, 0, 0, 0))
+    mask = Image.new("L", (img.width * 2, img.height * 2), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, mask.width - 1, mask.height - 1], radius=round(size * .42) * 2, fill=158)
+    img.putalpha(mask.resize(img.size, Image.LANCZOS))
+    d = ImageDraw.Draw(img)
+    for n, l in enumerate(lines):
+        cy = pad / 2 + lh * n + lh / 2
+        for kind, val, x in l:
+            if kind == "i":
+                img.alpha_composite(val, (int(pad + x), max(0, int(cy - val.height / 2))))
+            else:
+                d.text((pad + x, cy), val, font=bold if kind == "n" else reg, anchor="lm", fill=(_chat_color(color) if kind == "n" else (240, 244, 245)) + (255,))
+        if cut and n == len(lines) - 1:
+            d.text((min(pad + ends[n], img.width - pad - dots), cy), "…", font=reg, anchor="lm", fill=(240, 244, 245, 255))
+    return img
+
+
+@lru_cache(maxsize=256)
+def _faded(key, alpha):
+    im = chat_img(*key).copy()
+    im.putalpha(im.getchannel("A").point(lambda v: v * alpha // 8))
+    return im
+
+
+def chat_bubble(it, size, width, alpha):
+    key = (it["u"], it["c"], it["x"], size, width)
+    return chat_img(*key) if alpha >= 8 else _faded(key, alpha)
+
+
+@lru_cache(maxsize=256)
+def chat_pill(n, size, ew, tw):
+    """La pastilla del contador, sin el emote (que va animado encima)."""
+    w, h = round(ew + tw + size * 1.15), round(size * 1.5)
+    mask = Image.new("L", (w * 2, h * 2), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w * 2 - 1, h * 2 - 1], radius=h, fill=166)
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    img.putalpha(mask.resize((w, h), Image.LANCZOS))
+    ImageDraw.Draw(img).text((size * .4 + ew + size * .25, h / 2), f"×{n}", font=chat_font(size, True), anchor="lm", fill=(255, 255, 255, 255))
+    return img
 
 
 # ------------------------------------------------------------ mezcla sobre numpy BGR

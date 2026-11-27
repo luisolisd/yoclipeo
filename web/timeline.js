@@ -167,61 +167,137 @@ class VideoMap {
 
 // ------------------------------------------------------------ línea de tiempo del clip
 class Timeline {
-  // cb: { seek(src), trimming(start, end), trim(start, end) }
+  // cb: { seek(src), trimming(start, end), trim(start, end), playing() }
   constructor(box, cb) {
     this.box = box; this.cb = cb; this.d = null; this.zoom = 1;
     box.innerHTML = `<div class="top"><span>Corte</span><b data-range></b><span class="hide-sm">Arrastra los bordes para alargar o acortar el clip.</span><span class="sp"></span>
       <button class="btn sm gh sq" data-z="out" title="Ver más alrededor" aria-label="Ver más alrededor">${icon("zoomout", 17)}</button><button class="btn sm gh sq" data-z="in" title="Acercar" aria-label="Acercar">${icon("zoomin", 17)}</button><button class="btn sm gh sq" data-z="fit" title="Ajustar al clip" aria-label="Ajustar al clip">${icon("fit", 17)}</button></div>
-      <div class="cv"><canvas></canvas><div class="ph"></div></div>`;
-    this.wrap = $(".cv", box); this.cv = $("canvas", box); this.ph = $(".ph", box);
+      <div class="cv"><canvas></canvas><div class="ph"></div></div>
+      <div class="bar" role="scrollbar" tabindex="0" aria-orientation="horizontal" aria-label="Mover la línea de tiempo" aria-valuemin="0" aria-valuemax="100" title="Arrastra para moverte. También con Shift y la rueda."><u></u><i></i></div>`;
+    this.wrap = $(".cv", box); this.cv = $("canvas", box); this.ph = $(".ph", box); this.bar = $(".bar", box);
     $$("[data-z]", box).forEach(b => b.onclick = () => b.dataset.z === "fit" ? this.fit() : this.scale(b.dataset.z === "in" ? 1 / 1.6 : 1.6));
     const w = this.wrap, at = (e) => { const r = w.getBoundingClientRect(); return this.va + (e.clientX - r.left - this.gut()) / Math.max(1, r.width - this.gut()) * (this.vb - this.va); };
     const edge = (e) => {
       if (!this.d) return null; const r = w.getBoundingClientRect(), x = e.clientX - r.left, slack = e.pointerType === "touch" ? 18 : 9;
       const ds = Math.abs(x - this.x(this.d.start)), de = Math.abs(x - this.x(this.d.end)); return Math.min(ds, de) > slack ? null : ds <= de ? "start" : "end";
     };
-    let drag = null;
+    let drag = null, from = 0, last = null, raf = 0, tap = false, two = null;
+    const fingers = new Map(), inView = (t) => Math.min(this.vb, Math.max(this.va, t));
+    const undo = () => { if (drag && this.trimming) { [this.d.start, this.d.end] = this.orig; this.draw(); cb.trimming(...this.orig); } drag = null; this.busy = this.trimming = false; };
+    // dos dedos: mover y acercar
+    const pair = () => { const [a, b] = [...fingers.values()]; return { x: (a + b) / 2, gap: Math.max(12, Math.abs(a - b)) }; };
+    const inner = (x) => { const r = w.getBoundingClientRect(); return (x - r.left - this.gut()) / Math.max(1, r.width - this.gut()); };
+    const pinch = () => {
+      const p = pair(), span = this.span(two.span * two.gap / p.gap), f = inner(p.x); this.view(two.t - f * span, two.t - f * span + span);
+    };
+    // al llegar a la orilla con algo agarrado, la vista avanza sola
+    const nudge = (now) => {
+      raf = 0; if (!drag || !last || !this.d) return; const r = w.getBoundingClientRect(), x = last.clientX - r.left, m = 26, lo = this.gut() + m, hi = r.width - m;
+      const over = x < lo ? x - lo : x > hi ? x - hi : 0, dt = Math.min(.05, (now - (this.nt || now)) / 1000); this.nt = now;
+      if (over && Math.sign(over) === Math.sign(last.clientX - from) && Math.abs(last.clientX - from) > 5) {
+        const a = this.va; this.pan(Math.max(-1.5, Math.min(1.5, over / 40)) * (this.vb - this.va) * .7 * dt); if (this.va !== a) move(last);
+      }
+      raf = requestAnimationFrame(nudge);
+    };
     w.onpointerdown = (e) => {
-      if (!this.d || e.button) return; e.preventDefault(); w.setPointerCapture(e.pointerId); drag = edge(e) || "seek";
-      if (drag === "seek") cb.seek(at(e)); else this.orig = [this.d.start, this.d.end];
+      if (!this.d || e.button) return; e.preventDefault(); w.setPointerCapture(e.pointerId);
+      if (e.pointerType === "touch") {
+        fingers.set(e.pointerId, e.clientX);
+        if (fingers.size === 2) { undo(); const p = pair(); two = { gap: p.gap, span: this.vb - this.va, t: this.va + inner(p.x) * (this.vb - this.va) }; return; }
+        if (fingers.size > 2 || two) return;
+      }
+      drag = edge(e) || "seek"; from = e.clientX; last = e; this.busy = true; this.nt = 0; tap = drag === "seek" && e.pointerType === "touch";
+      if (drag !== "seek") this.orig = [this.d.start, this.d.end]; else if (!tap) cb.seek(inView(at(e)));
+      if (!raf) raf = requestAnimationFrame(nudge);
     };
     w.onpointermove = (e) => {
       if (!this.d) return;
+      if (fingers.has(e.pointerId)) fingers.set(e.pointerId, e.clientX);
+      if (two) { if (fingers.size === 2) pinch(); return; }
       if (!drag) { w.style.cursor = edge(e) ? "ew-resize" : "default"; return; }
-      if (drag === "seek") return cb.seek(at(e));
+      last = e; if (tap && Math.abs(e.clientX - from) < 6) return; tap = false; move(e);
+    };
+    const move = (e) => {
+      if (drag === "seek") return cb.seek(inView(at(e)));
       let t = at(e); const px = (this.vb - this.va) / Math.max(1, w.clientWidth - this.gut()) * 7;
       // se pega al borde de la palabra más cercana
       for (const x of this.d.ctx) { const k = drag === "start" ? x.s - 0.08 : x.e + 0.25; if (Math.abs(k - t) < px) { t = k; break; } }
       if (drag === "start") this.d.start = Math.min(this.d.end - 1, Math.max(0, t)); else this.d.end = Math.max(this.d.start + 1, Math.min(this.d.media, t));
       this.trimming = true; this.draw(); cb.trimming(this.d.start, this.d.end);
     };
-    w.onpointerup = () => {
+    w.onpointerup = (e) => {
+      fingers.delete(e.pointerId); if (two) { if (!fingers.size) two = null; return; }
+      if (tap && drag) cb.seek(inView(at(e))); tap = false;
       if (drag && drag !== "seek" && this.trimming && (this.orig[0] !== this.d.start || this.orig[1] !== this.d.end)) cb.trim(+this.d.start.toFixed(2), +this.d.end.toFixed(2));
-      drag = null; this.trimming = false;
+      drag = null; this.busy = this.trimming = false;
     };
-    w.onpointercancel = () => { if (drag && this.trimming) { [this.d.start, this.d.end] = this.orig; this.draw(); } drag = null; this.trimming = false; };
-    w.onwheel = (e) => { if (!this.d || e.shiftKey || !e.deltaY) return; e.preventDefault(); this.scale(e.deltaY > 0 ? 1.25 : 0.8, at(e)); };
+    w.onpointercancel = (e) => { fingers.delete(e.pointerId); if (!fingers.size) two = null; tap = false; undo(); };
+    // rueda: acercar. Con Shift, o a los lados en un touchpad: mover
+    const px = (e, v) => v * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? w.clientWidth : 1);
+    const side = (e) => Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0;
+    const slide = (e, v) => { e.preventDefault(); this.pan(px(e, v) / Math.max(1, w.clientWidth - this.gut()) * (this.vb - this.va)); };
+    w.onwheel = (e) => {
+      if (!this.d || drag) return; const s = side(e); if (s) return slide(e, s);
+      if (!e.deltaY) return; e.preventDefault(); this.scale(Math.exp(Math.max(-100, Math.min(100, px(e, e.deltaY))) * .0022), at(e));
+    };
+    const b = this.bar; let grab = null;
+    const slideTo = (x) => { const g = this.room(), r = b.getBoundingClientRect(), p = (x - r.left - grab) / Math.max(1, r.width - g.w), a = g.lo + Math.min(1, Math.max(0, p)) * (g.hi - g.lo - g.span); this.view(a, a + g.span); };
+    b.onpointerdown = (e) => {
+      if (!this.d || e.button) return; e.preventDefault(); b.setPointerCapture(e.pointerId);
+      const g = this.room(), x = e.clientX - b.getBoundingClientRect().left - g.x; grab = x >= 0 && x <= g.w ? x : g.w / 2; b.classList.add("on"); slideTo(e.clientX);
+    };
+    b.onpointermove = (e) => { if (grab !== null) slideTo(e.clientX); };
+    b.onpointerup = b.onpointercancel = () => { grab = null; b.classList.remove("on"); };
+    b.onwheel = (e) => { if (this.d) slide(e, side(e) || e.deltaY); };
+    b.onkeydown = (e) => {
+      if (!this.d || e.ctrlKey || e.altKey || e.metaKey) return; const s = this.vb - this.va, k = { ArrowLeft: -s / 10, ArrowRight: s / 10, PageUp: -s * .9, PageDown: s * .9, Home: -1e9, End: 1e9 }[e.key];
+      if (k === undefined) return; e.preventDefault(); e.stopPropagation(); this.pan(k);
+    };
     this.ro = new ResizeObserver(() => { this.draw(); this.head(this.src); }); this.ro.observe(w);
     this.onTheme = () => this.draw(); window.addEventListener("tema", this.onTheme);
   }
-  destroy() { this.ro.disconnect(); window.removeEventListener("tema", this.onTheme); }
+  destroy() { this.ro.disconnect(); window.removeEventListener("tema", this.onTheme); this.d = null; }
+  // hasta dónde se puede ver. Mientras se arrastra un borde no cambia
+  lims() { const [s, e] = this.trimming ? this.orig : [this.d.start, this.d.end]; return [Math.max(0, s - 60), Math.min(this.d.media, e + 60)]; }
+  span(s) { const [a, b] = this.lims(); return Math.min(b - a, Math.max(3, s)); }
+  pan(dt) { const s = this.vb - this.va, [lo, hi] = this.lims(), a = Math.min(Math.max(lo, this.va + dt), Math.max(lo, hi - s)); this.view(a, a + s); }
+  room() { const [lo, hi] = this.lims(), W = this.bar.clientWidth, span = Math.min(hi - lo, this.vb - this.va), w = Math.min(W, Math.max(32, W * span / Math.max(.1, hi - lo))), free = hi - lo - span; return { lo, hi, span, w, x: free > .01 ? (this.va - lo) / free * (W - w) : 0, free, W }; }
+  drawBar() {
+    this.bar.style.marginLeft = 14 + this.gut() + "px";
+    const g = this.room(), k = g.W / Math.max(.1, g.hi - g.lo), [u, i] = this.bar.children, full = g.free <= .01;
+    u.style.left = (this.d.start - g.lo) * k + "px"; u.style.width = Math.max(2, (this.d.end - this.d.start) * k) + "px";
+    i.style.width = g.w + "px"; i.style.transform = `translateX(${g.x}px)`; this.bar.classList.toggle("full", full);
+    this.bar.setAttribute("aria-valuenow", full ? 0 : Math.round((this.va - g.lo) / g.free * 100)); this.bar.setAttribute("aria-valuetext", `${fmt(Math.max(0, this.va))} a ${fmt(this.vb)}`);
+  }
   gut() { return this.wrap.clientWidth < 560 ? 0 : 62; }
   x(t) { const g = this.gut(); return g + (t - this.va) / (this.vb - this.va) * (this.wrap.clientWidth - g); }
   // d: {start,end,segs,words,ctx,title,brand,stickers,media,toSrc}
-  set(d) { const first = !this.d; if (this.trimming) return; this.d = d; if (first) this.fit(); else { if (d.start < this.va || d.end > this.vb) this.fit(); this.draw(); } }
+  set(d) {
+    const old = this.d, first = !old; if (this.trimming) return; this.d = d; if (first) this.fit(); else {
+      const gone = (t, t0) => Math.abs(t - t0) > .001 && (t < this.va || t > this.vb);      // cambió un borde que no se está viendo
+      if (gone(d.start, old.start) || gone(d.end, old.end) || d.end <= this.va || d.start >= this.vb) this.fit(); else this.view(this.va, this.vb);
+    }
+  }
   setWave(peaks, a, b) { this.w = { peaks, a, b }; this.draw(); }
   fit() { if (!this.d) return; const pad = Math.max(1.5, (this.d.end - this.d.start) * 0.08); this.view(this.d.start - pad, this.d.end + pad); }
   scale(k, at = (this.va + this.vb) / 2) { if (!this.d) return; const span = Math.max(3, Math.min(this.d.end - this.d.start + 120, (this.vb - this.va) * k)), f = (at - this.va) / (this.vb - this.va); this.view(at - f * span, at - f * span + span); }
   view(a, b) {
-    const lim0 = Math.max(0, this.d.start - 60), lim1 = Math.min(this.d.media, this.d.end + 60), span = Math.min(b - a, lim1 - lim0); a = Math.min(Math.max(lim0, a), lim1 - span);
+    const [lim0, lim1] = this.lims(), span = Math.min(b - a, lim1 - lim0); a = Math.min(Math.max(lim0, a), lim1 - span);
     this.va = a; this.vb = a + span; this.draw(); this.head(this.src);
   }
-  head(src) {
+  // t: momento del clip. Si la aguja sale de la vista al reproducir o al moverla, la vista va con ella;
+  // si te fuiste a ver otra parte mientras se reproduce, se queda donde la dejaste
+  head(src, t) {
+    const went = t !== undefined && this.t !== undefined && Math.abs(t - this.t) > .005, seen = this.ph.style.opacity === "1"; if (t !== undefined) this.t = t;
+    if (went && this.d && !this.busy && (seen || !this.cb.playing()) && (src < this.va || src > this.vb)) {
+      const s = this.vb - this.va; this.src = src; return this.view(src - s * .12, src + s * .88);
+    }
     this.src = src; if (src === undefined || this.va === undefined) return; const x = this.x(src), out = x < this.gut() - 1 || x > this.wrap.clientWidth + 1;
     this.ph.style.transform = `translateX(${x}px)`; this.ph.style.opacity = out ? 0 : 1;
   }
   draw() {
     const d = this.d; if (!d || !this.cv.isConnected || this.va === undefined) return;
+    this.drawBar();
     $("[data-range]", this.box).textContent = `${fmt(d.start)} a ${fmt(d.end)} (${(d.end - d.start).toFixed(1)} s)`;
     const [c, W, H] = fitCanvas(this.cv), g = this.gut(), span = this.vb - this.va, X = (t) => this.x(t);
     const col = { line: cssVar("--line"), line2: cssVar("--line2"), faint: cssVar("--faint"), mut: cssVar("--mut"), text: cssVar("--text"), cut: cssVar("--cut"), soft: cssVar("--cut-soft"), s2: cssVar("--s2"), s3: cssVar("--s3"), ink: cssVar("--cut-ink") };
